@@ -1,0 +1,21 @@
+{
+  "type": "transfer_function",
+  "name": "Second-order plant",
+  "numerator": [25.0],
+  "denominator": [1.0, 4.0, 25.0],
+  "time_step": 0.001,
+  "stop_time": 2.0,
+  "reference": {
+    "initial": 0.0,
+    "final": 1.0,
+    "step_time": 0.1
+  },
+  "controller": {
+    "kp": 2.0,
+    "ki": 3.0,
+    "kd": 0.0,
+    "sample_time": 0.01,
+    "output_min": 0.0,
+    "output_max": 3.0
+  }
+}

@@ -4,6 +4,29 @@ A small, headless power-electronics simulator intended as a learning foundation.
 The initial model is a buck converter with an ideal PWM-controlled switch, an
 ideal freewheel diode, an inductor, an output capacitor, and a resistive load.
 
+## Interactive UI
+
+Launch the browser-based workbench from the project directory:
+
+```sh
+python -m streamlit run pycircuits_sim/ui.py
+```
+
+Choose an open-loop buck, PID-controlled buck, half-wave rectifier, or bridge
+rectifier. Adjust component/source/controller sliders and select **Run
+simulation** to refresh the waveforms and measured outputs. The simulation is
+explicitly triggered because rectifier solves with fine timesteps can take a
+few seconds.
+
+The **Linear control plant** mode also accepts continuous-time state-space
+matrices or a proper SISO numerator/denominator transfer function. State-space
+open-loop mode supports multiple inputs and outputs; PID feedback is currently
+SISO. Transfer-function coefficients are entered in descending powers of `s`
+and converted to controllable-canonical state space. Matrix/coefficient inputs
+must be valid numeric Python-style lists. Input signals use a step held between
+fixed integration times; PID output is sampled and held between controller
+updates.
+
 ## Run
 
 Requires Python 3.10 or newer. From the project directory:
@@ -69,6 +92,40 @@ and conditional integral anti-windup are enabled. The controller sample time
 must be an integer multiple of the plant timestep. The current controller is
 educational and uses ideal switch models; it is not suitable for validating a
 real converter or controller implementation.
+
+## Linear control plants
+
+Continuous-time LTI plants can be created directly with the public API:
+
+```python
+from pycircuits_sim import (
+	LinearPIDConfig,
+	StateSpaceModel,
+	StepReference,
+	simulate_state_space_pid,
+	transfer_function_to_state_space,
+)
+
+plant = transfer_function_to_state_space([1.0], [1.0, 1.0])
+result = simulate_state_space_pid(
+	plant,
+	LinearPIDConfig(kp=0.8, ki=2.0, kd=0.0, sample_time=0.01),
+	StepReference(initial=0.0, final=1.0, step_time=0.1),
+	time_step=0.001,
+	stop_time=2.0,
+)
+```
+
+`StateSpaceModel.from_matrices(A, B, C, D)` supports continuous-time MIMO
+open-loop simulation through `simulate_state_space`. `transfer_function_to_state_space`
+accepts proper continuous-time SISO polynomials with coefficients ordered from
+highest to lowest power. Both use fixed-step backward Euler; the controller
+sample time must be an integer multiple of the integration step. PID feedback
+currently requires SISO and `D = 0`, avoiding an unresolved algebraic loop from
+direct feedthrough. MIMO feedback, discrete-time transfer functions, and
+frequency-domain analysis are not yet implemented. Example definitions are in
+`examples/state_space_first_order.json` and
+`examples/transfer_function_second_order.json`.
 
 ## Generic transient MNA
 
