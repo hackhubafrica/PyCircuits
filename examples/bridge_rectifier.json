@@ -1,0 +1,28 @@
+{
+  "time_step": 0.00002,
+  "stop_time": 0.06,
+  "newton_tolerance": 1e-8,
+  "newton_max_iterations": 100,
+  "newton_damping": 0.6,
+  "gmin": 1e-9,
+  "components": [
+    {
+      "name": "VAC",
+      "type": "voltage_source",
+      "p": "ac_a",
+      "n": "0",
+      "waveform": {
+        "type": "sine",
+        "offset": 0.0,
+        "amplitude": 12.0,
+        "frequency": 50.0
+      }
+    },
+    {"name": "D1", "type": "diode", "p": "ac_a", "n": "dc_pos"},
+    {"name": "D2", "type": "diode", "p": "0", "n": "dc_pos"},
+    {"name": "D3", "type": "diode", "p": "dc_neg", "n": "ac_a"},
+    {"name": "D4", "type": "diode", "p": "dc_neg", "n": "0"},
+    {"name": "RLOAD", "type": "resistor", "p": "dc_pos", "n": "dc_neg", "value": 100.0},
+    {"name": "CFILTER", "type": "capacitor", "p": "dc_pos", "n": "dc_neg", "value": 0.001}
+  ]
+}

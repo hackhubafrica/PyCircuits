@@ -1,0 +1,2 @@
+[console_scripts]
+pycircuits-sim = pycircuits_sim.cli:main

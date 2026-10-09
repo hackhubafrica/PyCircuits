@@ -1,0 +1,42 @@
+{
+  "time_step": 0.00001,
+  "stop_time": 0.002,
+  "components": [
+    {
+      "name": "V1",
+      "type": "voltage_source",
+      "p": "supply",
+      "n": "0",
+      "value": 12.0
+    },
+    {
+      "name": "R1",
+      "type": "resistor",
+      "p": "supply",
+      "n": "out",
+      "value": 1000.0
+    },
+    {
+      "name": "C1",
+      "type": "capacitor",
+      "p": "out",
+      "n": "0",
+      "value": 0.000001
+    },
+    {
+      "name": "S1",
+      "type": "switch",
+      "p": "out",
+      "n": "0",
+      "ron": 0.1,
+      "roff": 1000000.0,
+      "threshold": 0.5,
+      "control_points": [
+        [0.0, 0.0],
+        [0.001, 0.0],
+        [0.00101, 1.0],
+        [0.002, 1.0]
+      ]
+    }
+  ]
+}

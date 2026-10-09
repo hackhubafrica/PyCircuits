@@ -1,0 +1,25 @@
+{
+  "plant": {
+    "input_voltage": 12.0,
+    "duty_cycle": 0.3,
+    "switching_frequency": 10000.0,
+    "inductance": 0.001,
+    "capacitance": 0.0001,
+    "load_resistance": 10.0,
+    "time_step": 0.000001,
+    "stop_time": 0.02
+  },
+  "controller": {
+    "kp": 0.12,
+    "ki": 50.0,
+    "kd": 0.00005,
+    "sample_time": 0.0001,
+    "duty_min": 0.0,
+    "duty_max": 0.95
+  },
+  "reference": {
+    "initial_voltage": 0.0,
+    "final_voltage": 5.0,
+    "step_time": 0.002
+  }
+}
