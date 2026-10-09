@@ -12,7 +12,7 @@ from .buck import _step_count
 
 
 GROUND_NODES = {"0", "gnd", "ground"}
-PASSIVE_TYPES = {"resistor", "capacitor", "inductor"}
+PASSIVE_TYPES = {"resistor", "capacitor", "inductor", "diode"}
 SOURCE_TYPES = {"voltage_source", "current_source"}
 
 
@@ -33,6 +33,9 @@ class Component:
     roff: float = 1e6
     control_points: tuple[tuple[float, float], ...] = ()
     threshold: float = 0.5
+    saturation_current: float = 1e-12
+    ideality_factor: float = 1.0
+    thermal_voltage: float = 0.02585
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Component:
@@ -46,6 +49,31 @@ class Component:
             raise ValueError("each component requires nonempty name, p, and n strings")
 
         if kind in PASSIVE_TYPES:
+            if kind == "diode":
+                saturation_current = _finite_number(
+                    data.get("saturation_current", 1e-12),
+                    f"{name}.saturation_current",
+                )
+                ideality_factor = _finite_number(
+                    data.get("ideality_factor", 1.0), f"{name}.ideality_factor"
+                )
+                thermal_voltage = _finite_number(
+                    data.get("thermal_voltage", 0.02585), f"{name}.thermal_voltage"
+                )
+                if saturation_current <= 0 or ideality_factor <= 0 or thermal_voltage <= 0:
+                    raise ValueError(
+                        f"{name}: saturation_current, ideality_factor, and "
+                        "thermal_voltage must be greater than zero"
+                    )
+                return cls(
+                    name=name,
+                    kind=kind,
+                    p=p,
+                    n=n,
+                    saturation_current=saturation_current,
+                    ideality_factor=ideality_factor,
+                    thermal_voltage=thermal_voltage,
+                )
             value = _finite_number(data.get("value"), f"{name}.value")
             if value <= 0:
                 raise ValueError(f"{name}.value must be greater than zero")
@@ -120,6 +148,10 @@ class MNAConfig:
     stop_time: float
     components: tuple[Component, ...]
     max_steps: int = 2_000_000
+    newton_tolerance: float = 1e-9
+    newton_max_iterations: int = 80
+    newton_damping: float = 0.5
+    gmin: float = 1e-12
 
     def __post_init__(self) -> None:
         for name in ("time_step", "stop_time"):
@@ -128,6 +160,14 @@ class MNAConfig:
                 raise ValueError(f"{name} must be finite and greater than zero")
         if self.max_steps < 1:
             raise ValueError("max_steps must be at least one")
+        if not math.isfinite(self.newton_tolerance) or self.newton_tolerance <= 0:
+            raise ValueError("newton_tolerance must be finite and greater than zero")
+        if self.newton_max_iterations < 1:
+            raise ValueError("newton_max_iterations must be at least one")
+        if not math.isfinite(self.newton_damping) or not 0 < self.newton_damping <= 1:
+            raise ValueError("newton_damping must be greater than zero and at most one")
+        if not math.isfinite(self.gmin) or self.gmin < 0:
+            raise ValueError("gmin must be finite and nonnegative")
         if _step_count(self.stop_time, self.time_step) > self.max_steps:
             raise ValueError("requested simulation exceeds max_steps")
         names = [component.name for component in self.components]
@@ -167,6 +207,14 @@ def load_mna_config(data: dict[str, Any]) -> MNAConfig:
         stop_time=_finite_number(data.get("stop_time"), "stop_time"),
         components=components,
         max_steps=int(data.get("max_steps", 2_000_000)),
+        newton_tolerance=_finite_number(
+            data.get("newton_tolerance", 1e-9), "newton_tolerance"
+        ),
+        newton_max_iterations=int(data.get("newton_max_iterations", 80)),
+        newton_damping=_finite_number(
+            data.get("newton_damping", 0.5), "newton_damping"
+        ),
+        gmin=_finite_number(data.get("gmin", 1e-12), "gmin"),
     )
     node_names = {
         node
@@ -254,36 +302,40 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
         for component in config.components
         if component.kind == "inductor"
     }
-    branch_solution = {component.name: 0.0 for component in branch_components}
+    previous_solution = np.zeros(system_size, dtype=float)
 
     for step_index in range(step_count):
         time = min((step_index + 1) * config.time_step, config.stop_time)
         step_size = time - times[-1]
-        matrix = np.zeros((system_size, system_size), dtype=float)
-        rhs = np.zeros(system_size, dtype=float)
+        base_matrix = np.zeros((system_size, system_size), dtype=float)
+        base_rhs = np.zeros(system_size, dtype=float)
+        switch_states: dict[str, bool] = {}
+
+        for node in node_names:
+            base_matrix[node_index[node], node_index[node]] += config.gmin
 
         def stamp_conductance(p: str, n: str, conductance: float) -> None:
             if p.lower() not in GROUND_NODES:
                 pi = node_index[p]
-                matrix[pi, pi] += conductance
+                base_matrix[pi, pi] += conductance
             if n.lower() not in GROUND_NODES:
                 ni = node_index[n]
-                matrix[ni, ni] += conductance
+                base_matrix[ni, ni] += conductance
             if p.lower() not in GROUND_NODES and n.lower() not in GROUND_NODES:
                 pi = node_index[p]
                 ni = node_index[n]
-                matrix[pi, ni] -= conductance
-                matrix[ni, pi] -= conductance
+                base_matrix[pi, ni] -= conductance
+                base_matrix[ni, pi] -= conductance
 
         def stamp_branch(p: str, n: str, branch: int) -> None:
             if p.lower() not in GROUND_NODES:
                 pi = node_index[p]
-                matrix[pi, branch] += 1.0
-                matrix[branch, pi] += 1.0
+                base_matrix[pi, branch] += 1.0
+                base_matrix[branch, pi] += 1.0
             if n.lower() not in GROUND_NODES:
                 ni = node_index[n]
-                matrix[ni, branch] -= 1.0
-                matrix[branch, ni] -= 1.0
+                base_matrix[ni, branch] -= 1.0
+                base_matrix[branch, ni] -= 1.0
 
         for component in config.components:
             if component.kind == "resistor":
@@ -293,38 +345,126 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
                 stamp_conductance(component.p, component.n, conductance)
                 history_current = conductance * capacitor_history[component.name]
                 if component.p.lower() not in GROUND_NODES:
-                    rhs[node_index[component.p]] += history_current
+                    base_rhs[node_index[component.p]] += history_current
                 if component.n.lower() not in GROUND_NODES:
-                    rhs[node_index[component.n]] -= history_current
+                    base_rhs[node_index[component.n]] -= history_current
             elif component.kind == "inductor":
                 branch = branch_index[component.name]
                 stamp_branch(component.p, component.n, branch)
                 resistance = component.value / step_size
-                matrix[branch, branch] -= resistance
-                rhs[branch] -= resistance * inductor_history[component.name]
+                base_matrix[branch, branch] -= resistance
+                base_rhs[branch] -= resistance * inductor_history[component.name]
             elif component.kind == "voltage_source":
                 branch = branch_index[component.name]
                 stamp_branch(component.p, component.n, branch)
-                rhs[branch] += _source_value(component, time)
+                base_rhs[branch] += _source_value(component, time)
             elif component.kind == "current_source":
                 source_current = _source_value(component, time)
                 if component.p.lower() not in GROUND_NODES:
-                    rhs[node_index[component.p]] -= source_current
+                    base_rhs[node_index[component.p]] -= source_current
                 if component.n.lower() not in GROUND_NODES:
-                    rhs[node_index[component.n]] += source_current
+                    base_rhs[node_index[component.n]] += source_current
             elif component.kind == "switch":
                 is_on = _control_value(component, time) >= component.threshold
                 resistance = component.ron if is_on else component.roff
                 stamp_conductance(component.p, component.n, 1.0 / resistance)
-                switch_traces[component.name].append(is_on)
+                switch_states[component.name] = is_on
 
-        try:
-            solution = np.linalg.solve(matrix, rhs)
-        except np.linalg.LinAlgError as exc:
+        diodes = [component for component in config.components if component.kind == "diode"]
+        solution_guess = previous_solution.copy()
+        converged = not diodes
+        final_residual_norm = 0.0
+        for iteration in range(config.newton_max_iterations if diodes else 1):
+            residual = base_matrix @ solution_guess - base_rhs
+            jacobian = base_matrix.copy()
+            for diode in diodes:
+                diode_voltage = _node_voltage(solution_guess, diode.p, node_index) - _node_voltage(
+                    solution_guess, diode.n, node_index
+                )
+                voltage_scale = diode.ideality_factor * diode.thermal_voltage
+                exponent = max(-40.0, min(40.0, diode_voltage / voltage_scale))
+                exponential = math.exp(exponent)
+                diode_current = diode.saturation_current * (exponential - 1.0)
+                conductance = diode.saturation_current * exponential / voltage_scale
+                stamp_diode_conductance(
+                    jacobian, diode.p, diode.n, conductance, node_index
+                )
+                if diode.p.lower() not in GROUND_NODES:
+                    residual[node_index[diode.p]] += diode_current
+                if diode.n.lower() not in GROUND_NODES:
+                    residual[node_index[diode.n]] -= diode_current
+
+            residual_norm = float(np.max(np.abs(residual)))
+            final_residual_norm = residual_norm
+            if diodes and residual_norm <= config.newton_tolerance:
+                converged = True
+                break
+
+            try:
+                correction = np.linalg.solve(jacobian, -residual)
+            except np.linalg.LinAlgError as exc:
+                raise ValueError(
+                    f"MNA system is singular at t={time:g} s; check for floating nodes "
+                    "or ideal-source loops"
+                ) from exc
+
+            if not diodes:
+                solution_guess += correction
+                break
+
+            alpha = config.newton_damping
+            accepted = False
+            while alpha >= 1e-7:
+                candidate = solution_guess + alpha * correction
+                candidate_residual = base_matrix @ candidate - base_rhs
+                for diode in diodes:
+                    diode_voltage = _node_voltage(candidate, diode.p, node_index) - _node_voltage(
+                        candidate, diode.n, node_index
+                    )
+                    voltage_scale = diode.ideality_factor * diode.thermal_voltage
+                    exponent = max(-40.0, min(40.0, diode_voltage / voltage_scale))
+                    diode_current = diode.saturation_current * (math.exp(exponent) - 1.0)
+                    if diode.p.lower() not in GROUND_NODES:
+                        candidate_residual[node_index[diode.p]] += diode_current
+                    if diode.n.lower() not in GROUND_NODES:
+                        candidate_residual[node_index[diode.n]] -= diode_current
+                candidate_norm = float(np.max(np.abs(candidate_residual)))
+                if candidate_norm < residual_norm or candidate_norm <= config.newton_tolerance:
+                    accepted = True
+                    break
+                alpha *= 0.5
+
+            if not accepted:
+                if residual_norm <= config.newton_tolerance:
+                    converged = True
+                    break
+                break
+
+            change = float(np.max(np.abs(candidate - solution_guess)))
+            solution_guess = candidate
+            scale = 1.0 + float(np.max(np.abs(solution_guess)))
+            if (
+                change <= config.newton_tolerance * scale
+                and candidate_norm <= config.newton_tolerance
+            ):
+                converged = True
+                break
+
+        if not converged:
+            diode_voltages = ", ".join(
+                f"{diode.name}={_node_voltage(solution_guess, diode.p, node_index) - _node_voltage(solution_guess, diode.n, node_index):.5g}V"
+                for diode in diodes
+            )
             raise ValueError(
-                f"MNA system is singular at t={time:g} s; check for floating nodes "
-                "or ideal-source loops"
-            ) from exc
+                f"diode Newton iteration did not converge at t={time:g} s "
+                f"after {config.newton_max_iterations} iterations "
+                f"(residual={final_residual_norm:.3g}, {diode_voltages})"
+            )
+        solution = solution_guess
+        previous_solution = solution.copy()
+        for component in config.components:
+            if component.kind == "switch":
+                switch_traces[component.name].append(switch_states[component.name])
 
         times.append(time)
         for node in node_names:
@@ -348,11 +488,33 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
                 is_on = switch_traces[component.name][-1]
                 resistance = component.ron if is_on else component.roff
                 current = voltage_drop / resistance
+            elif component.kind == "diode":
+                voltage_scale = component.ideality_factor * component.thermal_voltage
+                exponent = max(-40.0, min(40.0, voltage_drop / voltage_scale))
+                current = component.saturation_current * (math.exp(exponent) - 1.0)
             else:
                 current = float(solution[branch_index[component.name]])
             current_traces[component.name].append(current)
 
-        for component in branch_components:
-            branch_solution[component.name] = float(solution[branch_index[component.name]])
-
     return CircuitResult(times, node_traces, current_traces, switch_traces)
+
+
+def stamp_diode_conductance(
+    matrix: np.ndarray,
+    p: str,
+    n: str,
+    conductance: float,
+    node_index: dict[str, int],
+) -> None:
+    """Stamp a diode's small-signal conductance into an MNA matrix."""
+    if p.lower() not in GROUND_NODES:
+        pi = node_index[p]
+        matrix[pi, pi] += conductance
+    if n.lower() not in GROUND_NODES:
+        ni = node_index[n]
+        matrix[ni, ni] += conductance
+    if p.lower() not in GROUND_NODES and n.lower() not in GROUND_NODES:
+        pi = node_index[p]
+        ni = node_index[n]
+        matrix[pi, ni] -= conductance
+        matrix[ni, pi] -= conductance

@@ -80,20 +80,40 @@ python -m pycircuits_sim.cli mna examples/mna_switched_rc.json
 ```
 
 Supported components are resistors, capacitors, inductors, DC or sine voltage
-and current sources, and ideal controlled switches approximated by finite
-`ron`/`roff` resistances. Capacitor initial voltage and inductor initial current
-can be supplied with `initial`. Switches use `control_points` as `[time_s,
-control_value]` pairs; the control is linearly interpolated and compared with
-`threshold`. Output CSV contains all node voltages and component currents; the
-plot shows node voltages.
+and current sources, Shockley-model diodes, and controlled switches approximated
+by finite `ron`/`roff` resistances. Capacitor initial voltage and inductor
+initial current can be supplied with `initial`. Switches use `control_points` as
+`[time_s, control_value]` pairs; the control is linearly interpolated and
+compared with `threshold`. Diodes accept `saturation_current`,
+`ideality_factor`, and `thermal_voltage`. The solver uses damped Newton-Raphson
+iterations at each transient timestep when a circuit contains diodes; tune
+`newton_tolerance`, `newton_max_iterations`, and `newton_damping` if needed.
+Output CSV contains all node voltages and component currents; the plot shows
+node voltages.
 
-This is a linear transient MNA core with PWL resistive switches, not yet a full
-SPICE replacement. It does not currently implement diodes, nonlinear device
-models, dependent sources, AC steady-state analysis, adaptive timesteps,
-Newton-Raphson iteration, or a schematic editor. Finite `roff` means an off
-switch has small leakage, and high `ron`/`roff` ratios can worsen numerical
-conditioning. A circuit with floating nodes or contradictory ideal sources
-will fail with a singular-system diagnostic.
+The diode current uses the Shockley equation, with the exponential argument
+limited to avoid floating-point overflow. This is a basic junction model; it
+does not include reverse recovery, breakdown, junction capacitance, or series
+resistance. `gmin` adds a configurable conductance from each non-ground node to
+ground (default `1e-12` S) to help condition diode-off and floating networks.
+Set `gmin` to zero to disable that numerical reference; truly floating circuits
+may then produce a singular-system error.
+
+Example rectifiers:
+
+```sh
+python -m pycircuits_sim.cli mna examples/half_wave_rectifier.json
+python -m pycircuits_sim.cli mna examples/bridge_rectifier.json
+```
+
+This remains a teaching simulator, not a full SPICE replacement. It does not
+currently implement MOSFET/BJT models, dependent sources, AC steady-state
+analysis, adaptive timesteps, or schematic editing. Finite switch `roff` means
+an off switch has small leakage, and high `ron`/`roff` ratios can worsen
+conditioning. Circuits with floating modes can still be poorly conditioned,
+especially if `gmin` is disabled; contradictory ideal sources produce a
+singular-system diagnostic. Diode nonconvergence is reported with timestep,
+residual, and junction voltages.
 
 ## Model boundaries
 
