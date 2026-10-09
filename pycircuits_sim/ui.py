@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import ast
+import math
 from dataclasses import replace
 from io import StringIO
 
@@ -19,13 +20,20 @@ from pycircuits_sim.closed_loop import (
     simulate_closed_loop,
 )
 from pycircuits_sim.mna import MNAConfig, simulate_mna
+from pycircuits_sim.schematic_ui import render_schematic_editor
 from pycircuits_sim.linear_systems import (
+    DiscreteStateSpaceModel,
     LinearPIDConfig,
     LinearSimulationResult,
     StateSpaceModel,
     StepReference,
+    frequency_response,
+    discrete_frequency_response,
+    logarithmic_frequency_grid,
     simulate_state_space,
     simulate_state_space_pid,
+    simulate_discrete_state_space,
+    simulate_discrete_state_space_pid,
     transfer_function_to_state_space,
 )
 
@@ -92,7 +100,7 @@ def style_chart(figure: go.Figure) -> go.Figure:
 st.sidebar.markdown("<div class='workbench-kicker'>Simulation setup</div>", unsafe_allow_html=True)
 circuit = st.sidebar.selectbox(
     "Circuit",
-    ["Closed-loop buck", "Open-loop buck", "Half-wave rectifier", "Bridge rectifier", "Linear control plant"],
+    ["Closed-loop buck", "Open-loop buck", "Half-wave rectifier", "Bridge rectifier", "Linear control plant", "Schematic editor"],
 )
 st.sidebar.caption("Adjust component and solver values, then run the simulation.")
 
@@ -100,16 +108,24 @@ st.markdown("<div class='workbench-kicker'>PyCircuits / Interactive lab</div>", 
 st.markdown("<div class='workbench-title'>Power Electronics Workbench</div>", unsafe_allow_html=True)
 st.markdown("<div class='workbench-subtitle'>Change a parameter, rerun the model, and inspect the resulting waveforms.</div>", unsafe_allow_html=True)
 
-if circuit == "Linear control plant":
+if circuit == "Schematic editor":
+    render_schematic_editor()
+
+elif circuit == "Linear control plant":
     left, right = st.columns([0.72, 0.28], gap="large")
     with st.sidebar:
         st.subheader("Plant representation")
-        representation = st.radio("Model format", ["State-space matrices", "Transfer function"], horizontal=False)
-        linear_mode = st.radio("Analysis", ["Open-loop response", "PID feedback"], horizontal=False)
-        if representation == "State-space matrices":
-            example = st.selectbox("Load example", ["First-order low-pass", "Second-order oscillator"])
+        representation = st.radio("Model format", ["State-space matrices", "Discrete state-space", "Transfer function"], horizontal=False)
+        linear_mode = st.radio("Analysis", ["Open-loop response", "PID feedback", "Frequency response"], horizontal=False)
+        if representation in {"State-space matrices", "Discrete state-space"}:
+            examples = ["First-order low-pass", "Second-order oscillator"] if representation == "State-space matrices" else ["Discrete first-order lag", "Discrete second-order plant"]
+            example = st.selectbox("Load example", examples)
             if example == "First-order low-pass":
                 A_text, B_text, C_text, D_text = "[[-10.0]]", "[[10.0]]", "[[1.0]]", "[[0.0]]"
+            elif example == "Discrete first-order lag":
+                A_text, B_text, C_text, D_text = "[[0.904837418]]", "[[0.095162582]]", "[[1.0]]", "[[0.0]]"
+            elif example == "Discrete second-order plant":
+                A_text, B_text, C_text, D_text = "[[0.98, 0.01], [-0.25, 0.94]]", "[[0.0], [0.25]]", "[[1.0, 0.0]]", "[[0.0]]"
             else:
                 A_text, B_text, C_text, D_text = "[[0.0, 1.0], [-25.0, -4.0]]", "[[0.0], [25.0]]", "[[1.0, 0.0]]", "[[0.0]]"
             with st.expander("Edit A, B, C, D matrices", expanded=True):
@@ -126,41 +142,63 @@ if circuit == "Linear control plant":
             numerator_text = st.text_input("Numerator coefficients, descending powers of s", numerator_text)
             denominator_text = st.text_input("Denominator coefficients, descending powers of s", denominator_text)
 
-        st.subheader("Reference and time")
-        if linear_mode == "PID feedback":
-            reference_initial = st.number_input("Initial reference", value=0.0, step=0.1)
-            reference_final = st.number_input("Final reference", value=1.0, step=0.1)
+        if representation == "Discrete state-space":
+            discrete_sample_time = st.select_slider("Plant sample time (ms)", [1, 2, 5, 10, 20, 50], value=10) * 1e-3
         else:
-            input_initial_text = st.text_input("Initial input vector", "[0.0]")
-            input_final_text = st.text_input("Final input vector", "[1.0]")
-        stop = st.slider("Duration (s)", 0.1, 20.0, 2.0, 0.1)
-        sample_time = st.select_slider("Controller sample time (ms)", [1, 2, 5, 10, 20, 50], value=10) * 1e-3
-        integration_ratio = st.select_slider("Integration steps per controller interval", [2, 5, 10, 20], value=10)
-        time_step = sample_time / integration_ratio
-        reference_step_time = st.slider("Reference step time (s)", 0.0, float(stop), min(0.1, float(stop)), 0.01)
-        if linear_mode == "PID feedback":
-            st.subheader("PID controller")
-            kp = st.slider("Kp", 0.0, 20.0, 1.0, 0.05)
-            ki = st.slider("Ki", 0.0, 50.0, 4.0, 0.1)
-            kd = st.slider("Kd", 0.0, 2.0, 0.0, 0.005)
-            output_min = st.number_input("Control minimum", value=0.0, step=0.1)
-            output_max = st.number_input("Control maximum", value=3.0, step=0.1)
+            discrete_sample_time = None
+
+        if linear_mode == "Frequency response":
+            st.subheader("Frequency range")
+            nyquist = 0.5 / discrete_sample_time if representation == "Discrete state-space" else None
+            maximum_decade_limit = max(-2, min(7, math.floor(math.log10(nyquist)) if nyquist else 7))
+            minimum_upper = min(3, maximum_decade_limit - 1)
+            minimum_decade = st.slider("Minimum frequency (decade, Hz)", -4, minimum_upper, min(-2, minimum_upper))
+            maximum_decade = st.slider("Maximum frequency (decade, Hz)", minimum_decade + 1, maximum_decade_limit, max(minimum_decade + 1, min(4, maximum_decade_limit)))
+            points_per_decade = st.select_slider("Points per decade", [10, 20, 30, 50, 100], value=30)
+        else:
+            st.subheader("Reference and time")
+            if linear_mode == "PID feedback":
+                reference_initial = st.number_input("Initial reference", value=0.0, step=0.1)
+                reference_final = st.number_input("Final reference", value=1.0, step=0.1)
+            else:
+                input_initial_text = st.text_input("Initial input vector", "[0.0]")
+                input_final_text = st.text_input("Final input vector", "[1.0]")
+            stop = st.slider("Duration (s)", 0.1, 20.0, 2.0, 0.1)
+            if representation == "Discrete state-space":
+                time_step = discrete_sample_time
+                if linear_mode == "PID feedback":
+                    controller_ratio = st.select_slider("Controller interval (plant samples)", [1, 2, 5, 10], value=1)
+                    sample_time = discrete_sample_time * controller_ratio
+                else:
+                    sample_time = discrete_sample_time
+            else:
+                sample_time = st.select_slider("Controller sample time (ms)", [1, 2, 5, 10, 20, 50], value=10) * 1e-3
+                integration_ratio = st.select_slider("Integration steps per controller interval", [2, 5, 10, 20], value=10)
+                time_step = sample_time / integration_ratio
+            reference_step_time = st.slider("Reference step time (s)", 0.0, float(stop), min(0.1, float(stop)), 0.01)
+            if linear_mode == "PID feedback":
+                st.subheader("PID controller")
+                kp = st.slider("Kp", 0.0, 20.0, 1.0, 0.05)
+                ki = st.slider("Ki", 0.0, 50.0, 4.0, 0.1)
+                kd = st.slider("Kd", 0.0, 2.0, 0.0, 0.005)
+                output_min = st.number_input("Control minimum", value=0.0, step=0.1)
+                output_max = st.number_input("Control maximum", value=3.0, step=0.1)
         run = st.button("Run simulation", type="primary", use_container_width=True)
 
     current_settings = (
         representation,
         linear_mode,
         example,
-        A_text if representation == "State-space matrices" else numerator_text,
-        B_text if representation == "State-space matrices" else denominator_text,
-        C_text if representation == "State-space matrices" else "",
-        D_text if representation == "State-space matrices" else "",
-        reference_initial if linear_mode == "PID feedback" else input_initial_text,
-        reference_final if linear_mode == "PID feedback" else input_final_text,
-        stop,
-        sample_time,
-        time_step,
-        reference_step_time,
+        A_text if representation in {"State-space matrices", "Discrete state-space"} else numerator_text,
+        B_text if representation in {"State-space matrices", "Discrete state-space"} else denominator_text,
+        C_text if representation in {"State-space matrices", "Discrete state-space"} else "",
+        D_text if representation in {"State-space matrices", "Discrete state-space"} else "",
+        (reference_initial, reference_final) if linear_mode == "PID feedback" else ((input_initial_text, input_final_text) if linear_mode == "Open-loop response" else (minimum_decade, maximum_decade, points_per_decade)),
+        stop if linear_mode != "Frequency response" else None,
+        sample_time if linear_mode != "Frequency response" else None,
+        time_step if linear_mode != "Frequency response" else None,
+        discrete_sample_time if representation == "Discrete state-space" else None,
+        reference_step_time if linear_mode != "Frequency response" else None,
         kp if linear_mode == "PID feedback" else 0.0,
         ki if linear_mode == "PID feedback" else 0.0,
         kd if linear_mode == "PID feedback" else 0.0,
@@ -171,26 +209,39 @@ if circuit == "Linear control plant":
         st.markdown("#### Run summary")
         if run or "linear_result" not in st.session_state or st.session_state.get("linear_settings") != current_settings:
             try:
-                if representation == "State-space matrices":
-                    model = StateSpaceModel.from_matrices(
+                if representation in {"State-space matrices", "Discrete state-space"}:
+                    model_type = DiscreteStateSpaceModel if representation == "Discrete state-space" else StateSpaceModel
+                    matrices = (
                         ast.literal_eval(A_text),
                         ast.literal_eval(B_text),
                         ast.literal_eval(C_text),
                         ast.literal_eval(D_text),
                     )
+                    model = model_type.from_matrices(*matrices, **({"sample_time": discrete_sample_time} if representation == "Discrete state-space" else {}))
                 else:
                     model = transfer_function_to_state_space(
                         ast.literal_eval(numerator_text),
                         ast.literal_eval(denominator_text),
                     )
-                if linear_mode == "PID feedback":
-                    result = simulate_state_space_pid(
-                        model,
-                        LinearPIDConfig(kp, ki, kd, sample_time, output_min, output_max),
-                        StepReference(reference_initial, reference_final, reference_step_time),
-                        time_step=time_step,
-                        stop_time=stop,
+                st.session_state["linear_model"] = model
+                if linear_mode == "Frequency response":
+                    max_frequency = 10.0 ** maximum_decade
+                    if representation == "Discrete state-space":
+                        max_frequency = min(max_frequency, (0.5 / discrete_sample_time) * 0.99)
+                    frequencies = logarithmic_frequency_grid(
+                        10.0 ** minimum_decade,
+                        max_frequency,
+                        points_per_decade,
                     )
+                    result = discrete_frequency_response(model, frequencies) if representation == "Discrete state-space" else frequency_response(model, frequencies)
+                    st.session_state["linear_frequency_result"] = result
+                elif linear_mode == "PID feedback":
+                    pid_config = LinearPIDConfig(kp, ki, kd, sample_time, output_min, output_max)
+                    reference_config = StepReference(reference_initial, reference_final, reference_step_time)
+                    if representation == "Discrete state-space":
+                        result = simulate_discrete_state_space_pid(model, pid_config, reference_config, stop_time=stop)
+                    else:
+                        result = simulate_state_space_pid(model, pid_config, reference_config, time_step=time_step, stop_time=stop)
                 else:
                     input_initial = ast.literal_eval(input_initial_text)
                     input_final = ast.literal_eval(input_final_text)
@@ -199,19 +250,35 @@ if circuit == "Linear control plant":
                     def input_signal(time: float) -> list[float]:
                         values = input_initial if time < reference_step_time else input_final
                         return [float(value) for value in values]
-                    result = simulate_state_space(
-                        model,
-                        time_step=time_step,
-                        stop_time=stop,
-                        input_signal=input_signal,
-                    )
-                st.session_state["linear_result"] = result
+                    if representation == "Discrete state-space":
+                        result = simulate_discrete_state_space(model, stop_time=stop, input_signal=input_signal)
+                    else:
+                        result = simulate_state_space(model, time_step=time_step, stop_time=stop, input_signal=input_signal)
+                if linear_mode != "Frequency response":
+                    st.session_state["linear_result"] = result
                 st.session_state["linear_settings"] = current_settings
             except Exception as error:
                 st.error(f"Plant or simulation error: {error}")
 
+        model = st.session_state.get("linear_model")
         result = st.session_state.get("linear_result")
-        if result is not None and st.session_state.get("linear_settings") == current_settings:
+        frequency_result = st.session_state.get("linear_frequency_result")
+        if linear_mode == "Frequency response" and frequency_result is not None and st.session_state.get("linear_settings") == current_settings:
+            st.metric("System order", str(model.state_count))
+            discrete = representation == "Discrete state-space"
+            stable = all(abs(pole) < 1.0 for pole in frequency_result.poles) if discrete else all(pole.real < 0 for pole in frequency_result.poles)
+            stability_label = "Discrete-time stability" if discrete else "Continuous-time stability"
+            stability_value = "Stable" if stable else "Unstable / marginal"
+            st.metric(stability_label, stability_value)
+            pole_lines = [f"p{index + 1} = {pole.real:.5g}{pole.imag:+.5g}j" for index, pole in enumerate(frequency_result.poles)]
+            st.code("\n".join(pole_lines) if pole_lines else "No poles")
+            bode_columns: dict[str, list[float]] = {"frequency_hz": frequency_result.frequencies_hz}
+            for output_index in range(model.output_count):
+                for input_index in range(model.input_count):
+                    bode_columns[f"magnitude_y{output_index + 1}_u{input_index + 1}_db"] = [item[output_index][input_index] for item in frequency_result.magnitude_db]
+                    bode_columns[f"phase_y{output_index + 1}_u{input_index + 1}_deg"] = [item[output_index][input_index] for item in frequency_result.phase_deg]
+            st.download_button("Download Bode data CSV", csv_download(bode_columns), file_name="bode_response.csv", mime="text/csv", use_container_width=True)
+        elif result is not None and st.session_state.get("linear_settings") == current_settings:
             if linear_mode == "PID feedback":
                 st.metric("Final output", f"{result.output[-1]:.4g}", f"target {result.reference[-1]:.4g}")
                 st.metric("Peak output", f"{max(result.output):.4g}")
@@ -240,8 +307,28 @@ if circuit == "Linear control plant":
                 use_container_width=True,
             )
 
+    model = st.session_state.get("linear_model")
     result = st.session_state.get("linear_result")
-    if result is not None and st.session_state.get("linear_settings") == current_settings:
+    frequency_result = st.session_state.get("linear_frequency_result")
+    if linear_mode == "Frequency response" and frequency_result is not None and st.session_state.get("linear_settings") == current_settings:
+        figure = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.09)
+        frequency_values = frequency_result.frequencies_hz
+        colors = ["#bc4c35", "#117b75", "#b07a16", "#485caa", "#873d63", "#4a7970"]
+        for output_index in range(model.output_count):
+            for input_index in range(model.input_count):
+                label = f"Y{output_index + 1}/U{input_index + 1}"
+                color = colors[(output_index * model.input_count + input_index) % len(colors)]
+                magnitude = [item[output_index][input_index] for item in frequency_result.magnitude_db]
+                phase = [item[output_index][input_index] for item in frequency_result.phase_deg]
+                figure.add_trace(go.Scatter(x=frequency_values, y=magnitude, name=label, line={"color": color}), row=1, col=1)
+                figure.add_trace(go.Scatter(x=frequency_values, y=phase, name=label, line={"color": color}, showlegend=False), row=2, col=1)
+        figure.update_xaxes(type="log", title_text="Frequency (Hz)", row=2, col=1)
+        figure.update_xaxes(type="log", row=1, col=1)
+        figure.update_yaxes(title_text="Magnitude (dB)", row=1, col=1)
+        figure.update_yaxes(title_text="Phase (degrees)", row=2, col=1)
+        figure.update_layout(height=700, hovermode="x unified", margin={"l": 10, "r": 10, "t": 30, "b": 10})
+        left.plotly_chart(style_chart(figure), use_container_width=True, theme=None)
+    elif result is not None and st.session_state.get("linear_settings") == current_settings:
         scale, time_label = unit_time(result.time[-1])
         times = [value * scale for value in result.time]
         if linear_mode == "PID feedback":

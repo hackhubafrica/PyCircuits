@@ -1,45 +1,131 @@
-# PyCircuits Simulation Backend
+# PyCircuits
 
-A small, headless power-electronics simulator intended as a learning foundation.
-The initial model is a buck converter with an ideal PWM-controlled switch, an
-ideal freewheel diode, an inductor, an output capacitor, and a resistive load.
+PyCircuits is an educational power-electronics and control-systems simulator.
+It includes buck-converter simulations, rectifier netlists, sampled PID loops,
+continuous and discrete state-space plants, transfer-function conversion, and
+interactive waveform analysis. Models are simplified for learning and are not
+validated for hardware design or safety decisions.
 
-## Interactive UI
+## Quick start
 
-Launch the browser-based workbench from the project directory:
+The project requires Python 3.10 or newer. `requirements.txt` is a fully pinned
+snapshot of the current development virtual environment (Python 3.14.7), for
+reproducing that setup. On another supported Python version, install the project
+directly so pip can select compatible dependency builds:
+
+```sh
+python -m pip install -e .
+```
+
+Run setup commands from the project root.
+
+Create and activate a virtual environment.
+
+Linux or macOS:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Install the pinned development environment and this project:
+
+```sh
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Start the browser workbench:
 
 ```sh
 python -m streamlit run pycircuits_sim/ui.py
 ```
 
-Choose an open-loop buck, PID-controlled buck, half-wave rectifier, or bridge
-rectifier. Adjust component/source/controller sliders and select **Run
-simulation** to refresh the waveforms and measured outputs. The simulation is
-explicitly triggered because rectifier solves with fine timesteps can take a
-few seconds.
+Streamlit prints the local URL; open **http://localhost:8501** in a browser if
+it does not open automatically. Choose a circuit or plant from the sidebar,
+adjust its controls, and select **Run simulation**. The workbench supports
+open-loop and PID-controlled buck converters, half-wave and bridge rectifiers,
+continuous or discrete linear control plants, and a first-pass schematic editor.
+The editor lets you place supported two-terminal components, junctions, and
+ground; connect them on the canvas; inspect values; validate the generated MNA
+netlist; and run the existing solver. Results include interactive waveforms,
+run measurements, and CSV downloads.
 
-The **Linear control plant** mode also accepts continuous-time state-space
-matrices or a proper SISO numerator/denominator transfer function. State-space
-open-loop mode supports multiple inputs and outputs; PID feedback is currently
-SISO. Transfer-function coefficients are entered in descending powers of `s`
-and converted to controllable-canonical state space. Matrix/coefficient inputs
-must be valid numeric Python-style lists. Input signals use a step held between
-fixed integration times; PID output is sampled and held between controller
-updates.
-
-## Run
-
-Requires Python 3.10 or newer. From the project directory:
+To run the headless buck example instead:
 
 ```sh
 python -m pycircuits_sim.cli run examples/buck.json --output waveforms.csv
 ```
 
-After installing the project with `python -m pip install -e .`, the equivalent
-command is:
+Plot its CSV later with:
 
 ```sh
-pycircuits-sim run examples/buck.json --output waveforms.csv
+python -m pycircuits_sim.cli plot waveforms.csv --output waveforms.png
+```
+
+Or run a diode rectifier netlist:
+
+```sh
+python -m pycircuits_sim.cli mna examples/half_wave_rectifier.json
+```
+
+The installed `pycircuits-sim` command is also available after `pip install -e .`.
+For example, `pycircuits-sim mna examples/bridge_rectifier.json` runs the bridge.
+
+## Interactive UI
+
+The **Linear control plant** mode accepts continuous-time matrices, discrete-time
+matrices, and proper continuous-time SISO numerator/denominator transfer
+functions. Open-loop state-space models support multiple inputs and outputs;
+the initial PID feedback implementation is SISO. Transfer-function coefficients
+are entered in descending powers of `s` and converted to controllable-canonical
+state space. Discrete plants use the sample period specified in the sidebar;
+their Bode range is limited to frequencies below Nyquist. Matrix/coefficient
+inputs use numeric Python-style lists. Simulation runs are explicit because
+rectifier and fine-timestep runs can take a few seconds.
+
+In **Schematic editor**, add components from the sidebar palette and drag them
+to arrange the circuit. Draw wires from a component's right terminal to another
+node's left terminal; add junctions to branch a net and add a ground reference.
+Select a component in the properties panel to change its values. Open existing
+MNA JSON netlists with the file picker and save circuits as JSON with editor
+layout metadata plus standard MNA components/nodes. The editor currently covers
+two-terminal MNA parts; multi-terminal semiconductor packages and the later
+plant/controller block-diagram canvas are not included yet.
+
+## CLI reference
+
+Run an open-loop buck converter:
+
+```sh
+python -m pycircuits_sim.cli run examples/buck.json --output waveforms.csv
+```
+
+Run a sampled PID-controlled buck:
+
+```sh
+python -m pycircuits_sim.cli closed-loop examples/closed_loop_buck.json
+```
+
+Run component-circuit netlists and rectifiers:
+
+```sh
+python -m pycircuits_sim.cli mna examples/mna_switched_rc.json
+python -m pycircuits_sim.cli mna examples/half_wave_rectifier.json
+python -m pycircuits_sim.cli mna examples/bridge_rectifier.json
+```
+
+Sweep a supported buck parameter and create trace, metric, and plot files:
+
+```sh
+python -m pycircuits_sim.cli sweep examples/inductance_sweep_demo.json
 ```
 
 The CSV contains time, inductor current, output voltage, and switch state. The
@@ -62,7 +148,7 @@ The initial supported parameters are inductance, capacitance, load resistance,
 and duty cycle. The example sweeps inductance:
 
 ```sh
-python -m pycircuits_sim.cli sweep examples/inductance_sweep.json
+python -m pycircuits_sim.cli sweep examples/inductance_sweep_demo.json
 ```
 
 This writes a long-form `sweep.csv`, a per-run `sweep_metrics.csv`, and a
@@ -122,10 +208,22 @@ accepts proper continuous-time SISO polynomials with coefficients ordered from
 highest to lowest power. Both use fixed-step backward Euler; the controller
 sample time must be an integer multiple of the integration step. PID feedback
 currently requires SISO and `D = 0`, avoiding an unresolved algebraic loop from
-direct feedthrough. MIMO feedback, discrete-time transfer functions, and
-frequency-domain analysis are not yet implemented. Example definitions are in
+direct feedthrough. MIMO feedback and discrete transfer-function conversion are
+not yet implemented. Discrete state-space plants use
+`DiscreteStateSpaceModel.from_matrices(A_d, B_d, C_d, D_d, sample_time)` and
+advance with $x[k+1] = A_d x[k] + B_d u[k]$. They support open-loop MIMO,
+sampled SISO PID feedback, and discrete frequency response. Discrete Bode
+frequencies must be below Nyquist (`1 / (2 * sample_time)`), and stability
+requires every pole inside the unit circle. Discrete simulations stop at the
+last complete plant sample. Continuous-time frequency response
+is available through `frequency_response(model, frequencies_hz)` and
+`logarithmic_frequency_grid(minimum_hz, maximum_hz)`. The workbench plots Bode
+magnitude/phase per input-output channel and reports the eigenvalues of A as
+the plant poles. For continuous-time models, all poles with negative real parts
+indicate asymptotic stability. Example definitions are in
 `examples/state_space_first_order.json` and
-`examples/transfer_function_second_order.json`.
+`examples/transfer_function_second_order.json`; a discrete model is in
+`examples/discrete_first_order.json`.
 
 ## Generic transient MNA
 
