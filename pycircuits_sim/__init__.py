@@ -10,6 +10,20 @@ from .closed_loop import (
 )
 from .metrics import RunMetrics, measure_sweep
 from .mna import CircuitResult, Component, MNAConfig, load_mna_config, simulate_mna
+from .analysis import (
+    MarginResult,
+    NyquistResult,
+    PlantReport,
+    RootLocusResult,
+    StepMetrics,
+    StabilityReport,
+    analyze_stability,
+    bode_margins,
+    normalize_plant,
+    nyquist_response,
+    root_locus,
+    step_metrics,
+)
 from .linear_systems import (
 	DiscreteStateSpaceModel,
 	FrequencyResponseResult,
@@ -38,6 +52,12 @@ __all__ = [
 	"ReferenceStep",
 	"SimulationResult",
 	"RunMetrics",
+	"MarginResult",
+	"NyquistResult",
+	"PlantReport",
+	"RootLocusResult",
+	"StepMetrics",
+	"StabilityReport",
 	"CircuitResult",
 	"Component",
 	"MNAConfig",
@@ -50,6 +70,12 @@ __all__ = [
 	"StepReference",
 	"SweepRun",
 	"measure_sweep",
+	"analyze_stability",
+	"bode_margins",
+	"normalize_plant",
+	"nyquist_response",
+	"root_locus",
+	"step_metrics",
 	"load_mna_config",
 	"load_linear_plant",
 	"frequency_response",

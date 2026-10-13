@@ -6,6 +6,22 @@ continuous and discrete state-space plants, transfer-function conversion, and
 interactive waveform analysis. Models are simplified for learning and are not
 validated for hardware design or safety decisions.
 
+## Status & roadmap
+
+PyCircuits is the base project of a planned merge with **ControlKit** (kept
+under `ControlKit/` as a read-only reference archive). ControlKit's classical
+control-analysis features — stability verdicts, Bode margins, Nyquist, root
+locus, Ziegler–Nichols tuning, Ackermann/LQR state feedback, and block
+interconnections — are being ported into `pycircuits_sim` as pure-numpy
+engine modules under a **hybrid dependency policy**: everything works with
+numpy alone, while `pip install "pycircuits-sim[control]"` adds
+`python-control`/`scipy` fast paths for heavy numerics such as LQR. Read the
+full plan in `docs/`:
+
+- [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
+- [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
+- [`docs/PORTING_MAP.md`](docs/PORTING_MAP.md) — file-by-file transfer plan and porting conventions
+
 ## Quick start
 
 The project requires Python 3.10 or newer. `requirements.txt` is a fully pinned
@@ -42,7 +58,7 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-Start the browser workbench:
+# Start the browser workbench:
 
 ```sh
 python -m streamlit run pycircuits_sim/ui.py

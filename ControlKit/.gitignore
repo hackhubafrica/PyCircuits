@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+*.egg-info/
+.env
+.DS_Store
+.claude
+.agents

@@ -80,6 +80,7 @@ def _make_canvas_state(
     nodes: list[dict[str, Any]],
     wires: list[dict[str, Any]],
     selected_id: str | None,
+    timestamp: int | None = None,
 ) -> StreamlitFlowState:
     flow_nodes = [
         StreamlitFlowNode(
@@ -101,13 +102,16 @@ def _make_canvas_state(
             id=wire["id"],
             source=wire["source"],
             target=wire["target"],
-            edge_type="smoothstep",
+            edge_type="straight",
             deletable=True,
             style={"strokeWidth": 2},
         )
         for wire in wires
     ]
-    return StreamlitFlowState(flow_nodes, flow_edges, selected_id=selected_id)
+    state_kwargs = {"selected_id": selected_id}
+    if timestamp is not None:
+        state_kwargs["timestamp"] = timestamp
+    return StreamlitFlowState(flow_nodes, flow_edges, **state_kwargs)
 
 
 def _edit_component(component: dict[str, Any], key: str) -> dict[str, Any]:
@@ -240,25 +244,18 @@ def render_schematic_editor() -> None:
     wires = st.session_state["schematic_wires"]
     canvas_col, inspect_col = st.columns([0.72, 0.28], gap="large")
     with canvas_col:
-        flow_nodes = [
-            StreamlitFlowNode(
-                id=node["id"],
-                pos=tuple(node.get("position", [100, 100])),
-                data={"content": _node_content(node)},
-                source_position="right",
-                target_position="left",
-                draggable=True,
-                selectable=True,
-                connectable=True,
-                style={"width": "150px", "fontSize": "14px", "borderRadius": "4px"},
-            )
-            for node in nodes
-        ]
-        flow_edges = [
-            StreamlitFlowEdge(id=wire["id"], source=wire["source"], target=wire["target"], edge_type="smoothstep", deletable=True, style={"strokeWidth": 2})
-            for wire in wires
-        ]
-        current_state = StreamlitFlowState(flow_nodes, flow_edges, selected_id=st.session_state.get("schematic_selected_id"))
+        # Reuse the component's last-sync timestamp instead of the fresh
+        # default. A fresh timestamp would always be newer than the frontend's
+        # local drag timestamp, causing the canvas to snap dragged nodes back to
+        # their stale positions on the rerun that follows a drag. Persisting the
+        # timestamp lets the frontend's `l <= args.timestamp` guard fail after a
+        # drag so the new position is preserved.
+        current_state = _make_canvas_state(
+            nodes,
+            wires,
+            selected_id=st.session_state.get("schematic_selected_id"),
+            timestamp=st.session_state.get("schematic_flow_timestamp"),
+        )
         edited_state = streamlit_flow(
             "pycircuits_schematic_canvas",
             current_state,
@@ -276,6 +273,7 @@ def render_schematic_editor() -> None:
             enable_edge_menu=False,
             style={"width": "100%", "border": "1px solid #d7dfd7", "borderRadius": "4px"},
         )
+        st.session_state["schematic_flow_timestamp"] = edited_state.timestamp
         previous = {node["id"]: node for node in nodes}
         updated_nodes = []
         for flow_node in edited_state.nodes:
