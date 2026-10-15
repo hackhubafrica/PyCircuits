@@ -36,6 +36,12 @@ from .design import (
     tune_pole_placement,
     ziegler_nichols,
 )
+from .interconnect import (
+    InterconnectBlock,
+    InterconnectResult,
+    InterconnectSpec,
+    interconnect,
+)
 from .linear_systems import (
 	DiscreteStateSpaceModel,
 	FrequencyResponseResult,
@@ -75,6 +81,9 @@ __all__ = [
 	"StateFeedbackResult",
 	"StepTrace",
 	"TuneResult",
+	"InterconnectBlock",
+	"InterconnectResult",
+	"InterconnectSpec",
 	"CircuitResult",
 	"Component",
 	"MNAConfig",
@@ -98,6 +107,7 @@ __all__ = [
 	"pid_transfer_function",
 	"tune_pole_placement",
 	"ziegler_nichols",
+	"interconnect",
 	"load_mna_config",
 	"load_linear_plant",
 	"frequency_response",
