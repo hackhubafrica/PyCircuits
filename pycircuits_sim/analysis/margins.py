@@ -54,13 +54,19 @@ def _finite(value) -> float | None:
 def _interpolated_crossing(
     grid: np.ndarray, values: np.ndarray, level: float
 ) -> float | None:
-    """First grid interval crossing ``level``; interpolate in log of grid."""
+    """First grid interval crossing ``level``; interpolate in log of grid.
+
+    Requires a strict sign change across the interval (a value that merely
+    touches the level without changing sign is not a crossover), which keeps
+    degenerate plants such as 1/(s^2 - k^2) - whose phase is constantly
+    +/-180 degrees - from reporting a spurious phase crossover.
+    """
     shifted = values - level
     for index in range(shifted.size - 1):
         a, b = float(shifted[index]), float(shifted[index + 1])
-        if a == 0.0:
-            return float(grid[index])
-        if (a < 0.0 <= b) or (a > 0.0 >= b):
+        if (a >= 0.0 and b < 0.0) or (a < 0.0 and b >= 0.0):
+            if a == b:
+                continue
             fraction = a / (a - b)
             log_grid = np.log(grid[index : index + 2])
             return float(

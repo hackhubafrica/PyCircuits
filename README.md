@@ -15,8 +15,12 @@ locus, Ziegler–Nichols tuning, Ackermann/LQR state feedback, and block
 interconnections — are being ported into `pycircuits_sim` as pure-numpy
 engine modules under a **hybrid dependency policy**: everything works with
 numpy alone, while `pip install "pycircuits-sim[control]"` adds
-`python-control`/`scipy` fast paths for heavy numerics such as LQR. Read the
-full plan in `docs/`:
+`python-control`/`scipy` fast paths for heavy numerics such as LQR.
+
+**Progress:** Phase 1 (analysis layer: `pycircuits_sim/analysis/`) and
+Phase 2 (design layer: `pycircuits_sim/design/`) are implemented and tested.
+Phase 3 (block interconnections) and Phase 4 (CLI/UI integration) remain.
+Read the full plan in `docs/`:
 
 - [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
 - [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
