@@ -10,6 +10,9 @@ from pathlib import Path
 
 from .buck import BuckConfig, SimulationResult
 from .closed_loop import ClosedLoopConfig, ClosedLoopResult, PIDConfig, ReferenceStep
+from .design import PIDGains
+from .design.state_feedback import StateFeedbackResult
+from .interconnect import InterconnectBlock, InterconnectSpec
 from .metrics import RunMetrics
 from .mna import CircuitResult, MNAConfig, load_mna_config
 from .sweep import SweepRun
@@ -73,6 +76,96 @@ def load_mna_config_file(path: str | Path) -> MNAConfig:
     with Path(path).open(encoding="utf-8") as config_file:
         data = json.load(config_file)
     return load_mna_config(data)
+
+
+def _tuple_matrix(rows) -> tuple[tuple[float, ...], ...]:
+    return tuple(tuple(float(value) for value in row) for row in rows)
+
+
+def load_interconnect_spec(path: str | Path) -> InterconnectSpec:
+    """Load an interconnection spec from a JSON file.
+
+    Expected shape: {"blocks": [{...}], "forward": [...], "parallel": [...]
+    (optional), "feedback": "unity" | "none" | [...], "stop_time": float,
+    "time_step": float (optional)}. Block fields mirror InterconnectBlock.
+    """
+    with Path(path).open(encoding="utf-8") as config_file:
+        data = json.load(config_file)
+    if not isinstance(data, dict):
+        raise ValueError("interconnect JSON must contain an object")
+    raw_blocks = data.get("blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        raise ValueError("interconnect config requires a nonempty blocks array")
+    blocks: list[InterconnectBlock] = []
+    for raw in raw_blocks:
+        if not isinstance(raw, dict):
+            raise ValueError("each block must be an object")
+        gains_data = raw.get("gains")
+        gains = (
+            PIDGains(
+                kp=float(gains_data["kp"]),
+                ki=float(gains_data["ki"]),
+                kd=float(gains_data["kd"]),
+            )
+            if isinstance(gains_data, dict)
+            else None
+        )
+        blocks.append(
+            InterconnectBlock(
+                id=str(raw.get("id", "")),
+                kind=str(raw.get("kind", "")),
+                num=tuple(float(v) for v in raw["num"]) if raw.get("num") is not None else None,
+                den=tuple(float(v) for v in raw["den"]) if raw.get("den") is not None else None,
+                A=_tuple_matrix(raw["A"]) if raw.get("A") is not None else None,
+                B=_tuple_matrix(raw["B"]) if raw.get("B") is not None else None,
+                C=_tuple_matrix(raw["C"]) if raw.get("C") is not None else None,
+                D=_tuple_matrix(raw["D"]) if raw.get("D") is not None else None,
+                gains=gains,
+                derivative_filter=(
+                    float(raw["derivative_filter"])
+                    if raw.get("derivative_filter") is not None
+                    else None
+                ),
+                k=float(raw["k"]) if raw.get("k") is not None else None,
+            )
+        )
+    forward = data.get("forward")
+    parallel = data.get("parallel")
+    feedback = data.get("feedback", "unity")
+    if not isinstance(forward, list) or not all(isinstance(v, str) for v in forward):
+        raise ValueError("forward must be an array of block ids")
+    if parallel is not None and (
+        not isinstance(parallel, list) or not all(isinstance(v, str) for v in parallel)
+    ):
+        raise ValueError("parallel must be an array of block ids")
+    if isinstance(feedback, list) and not all(isinstance(v, str) for v in feedback):
+        raise ValueError("feedback must be 'none', 'unity', or an array of block ids")
+    return InterconnectSpec(
+        blocks=tuple(blocks),
+        forward=tuple(forward),
+        parallel=tuple(parallel) if parallel is not None else None,
+        feedback=feedback,
+        stop_time=float(data.get("stop_time", 10.0)),
+        time_step=(
+            float(data["time_step"]) if data.get("time_step") is not None else None
+        ),
+    )
+
+
+def write_state_feedback_csv(result: StateFeedbackResult, path: str | Path) -> None:
+    """Write open- and closed-loop step responses to a CSV file.
+
+    Columns: time_s, open_output, closed_output (the traces share a time
+    grid, so they are written side by side).
+    """
+    if len(result.open_step.time_s) != len(result.closed_step.time_s):
+        raise ValueError("open- and closed-loop steps must share a time grid")
+    with Path(path).open("w", encoding="utf-8", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["time_s", "open_output", "closed_output"])
+        writer.writerows(
+            zip(result.open_step.time_s, result.open_step.output, result.closed_step.output)
+        )
 
 
 def read_waveforms_csv(path: str | Path) -> WaveformData:

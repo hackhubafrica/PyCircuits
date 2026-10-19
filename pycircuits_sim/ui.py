@@ -21,6 +21,7 @@ from pycircuits_sim.closed_loop import (
 )
 from pycircuits_sim.mna import MNAConfig, simulate_mna
 from pycircuits_sim.schematic_ui import render_schematic_editor
+from pycircuits_sim.control_ui import render_control_analysis
 from pycircuits_sim.linear_systems import (
     DiscreteStateSpaceModel,
     LinearPIDConfig,
@@ -100,7 +101,7 @@ def style_chart(figure: go.Figure) -> go.Figure:
 st.sidebar.markdown("<div class='workbench-kicker'>Simulation setup</div>", unsafe_allow_html=True)
 circuit = st.sidebar.selectbox(
     "Circuit",
-    ["Closed-loop buck", "Open-loop buck", "Half-wave rectifier", "Bridge rectifier", "Linear control plant", "Schematic editor"],
+    ["Closed-loop buck", "Open-loop buck", "Half-wave rectifier", "Bridge rectifier", "Linear control plant", "Control analysis", "Schematic editor"],
 )
 st.sidebar.caption("Adjust component and solver values, then run the simulation.")
 
@@ -110,6 +111,9 @@ st.markdown("<div class='workbench-subtitle'>Change a parameter, rerun the model
 
 if circuit == "Schematic editor":
     render_schematic_editor()
+
+elif circuit == "Control analysis":
+    render_control_analysis()
 
 elif circuit == "Linear control plant":
     left, right = st.columns([0.72, 0.28], gap="large")

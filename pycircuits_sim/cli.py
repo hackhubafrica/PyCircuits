@@ -1,14 +1,27 @@
-"""Command-line interface for running a buck converter simulation."""
+"""Command-line interface for the PyCircuits simulation and analysis engines."""
 
 from __future__ import annotations
 
 import argparse
+import re
+import sys
 
+from .analysis import (
+    analyze_stability,
+    bode_margins,
+    normalize_plant,
+    nyquist_response,
+    root_locus,
+    step_metrics,
+)
 from .buck import simulate_buck
 from .closed_loop import simulate_closed_loop
+from .design import ackermann, lqr, tune_pole_placement, ziegler_nichols
+from .interconnect import interconnect
 from .io import (
     load_config,
     load_closed_loop_config,
+    load_interconnect_spec,
     load_mna_config_file,
     load_sweep_config,
     read_waveforms_csv,
@@ -16,12 +29,192 @@ from .io import (
     write_closed_loop_csv,
     write_metrics_csv,
     write_mna_csv,
+    write_state_feedback_csv,
     write_sweep_csv,
 )
+from .linear_systems import load_linear_plant, simulate_state_space
 from .metrics import measure_sweep
 from .mna import simulate_mna
-from .plotting import plot_circuit, plot_closed_loop, plot_sweep, plot_waveforms
+from .plotting import (
+    plot_bode_margins,
+    plot_circuit,
+    plot_closed_loop,
+    plot_nyquist,
+    plot_root_locus,
+    plot_sweep,
+    plot_waveforms,
+)
 from .sweep import run_parameter_sweep
+
+
+def _parse_complex_list(text: str) -> list[complex]:
+    """Parse 'a+bj, c+dj, ...' (comma separated, 'i' accepted for 'j')."""
+    values: list[complex] = []
+    for token in text.split(","):
+        cleaned = token.strip().replace(" ", "").replace("i", "j")
+        if not cleaned:
+            continue
+        if cleaned == "j":
+            cleaned = "1j"
+        cleaned = re.sub(r"(?<=[+-])j", "1j", cleaned)
+        try:
+            values.append(complex(cleaned))
+        except ValueError as error:
+            raise ValueError(f"could not parse value {token.strip()!r}") from error
+    if not values:
+        raise ValueError("expected at least one comma-separated value")
+    return values
+
+
+def _parse_float_list(text: str) -> list[float]:
+    values: list[float] = []
+    for token in text.split(","):
+        cleaned = token.strip()
+        if not cleaned:
+            continue
+        try:
+            values.append(float(cleaned))
+        except ValueError as error:
+            raise ValueError(f"could not parse number {cleaned!r}") from error
+    if not values:
+        raise ValueError("expected at least one comma-separated number")
+    return values
+
+
+def _format_row(row) -> str:
+    return "[" + ", ".join(f"{float(value):.6g}" for value in row) + "]"
+
+
+def _format_complex(values, digits: int = 4) -> str:
+    def one(value: complex) -> str:
+        if value.imag == 0:
+            return f"{value.real:.{digits}g}"
+        sign = "+" if value.imag >= 0 else "-"
+        return f"{value.real:.{digits}g} {sign} {abs(value.imag):.{digits}g}j"
+
+    return ", ".join(one(complex(value)) for value in values)
+
+
+def _load_analysis_plant(path: str):
+    """Load a continuous SISO plant JSON (state_space or transfer_function)."""
+    model, _data = load_linear_plant(path)
+    return model
+
+
+def _command_analyze(args) -> None:
+    model = _load_analysis_plant(args.config)
+    report = normalize_plant(model)
+    stability = analyze_stability(model)
+
+    name = _format_complex(report.poles) if report.poles else "(none)"
+    print(f"Plant order: {report.order}   DC gain: {report.dc_gain}")
+    if report.numerator is not None:
+        print(f"Transfer function: num={list(report.numerator)} den={list(report.denominator)}")
+    print(f"Poles: {name}")
+    if report.zeros:
+        print(f"Zeros: {_format_complex(report.zeros)}")
+    print(f"BIBO stable: {stability.bibo_stable} - {stability.bibo_reason}")
+    print(
+        "Lyapunov asymptotic: "
+        f"{stability.lyapunov_asymptotic} - {stability.lyapunov_reason}"
+    )
+
+    if model.input_count == 1 and model.output_count == 1 and not args.no_step:
+        result = simulate_state_space(
+            model, args.stop_time / 2000.0, args.stop_time, lambda _t: (1.0,)
+        )
+        metrics = step_metrics(result.time, result.outputs["y1"])
+        print(
+            "Step metrics: "
+            f"rise={metrics.rise_time_s} s, settling={metrics.settling_time_s} s, "
+            f"overshoot={metrics.overshoot_percent}%, peak={metrics.peak}"
+        )
+
+    if args.bode:
+        plot_bode_margins(bode_margins(model), output_path=args.bode)
+        print(f"Wrote Bode/margins plot to {args.bode}")
+    if args.nyquist:
+        plot_nyquist(nyquist_response(model), output_path=args.nyquist)
+        print(f"Wrote Nyquist plot to {args.nyquist}")
+    if args.rlocus:
+        plot_root_locus(root_locus(model), output_path=args.rlocus)
+        print(f"Wrote root-locus plot to {args.rlocus}")
+
+
+def _command_tune(args) -> None:
+    model = _load_analysis_plant(args.config)
+    if args.method == "zn":
+        result = ziegler_nichols(model)
+        if result.ku is not None:
+            print(f"Method: Ziegler-Nichols ultimate   Ku={result.ku:.6g}   Pu={result.pu:.6g} s")
+        else:
+            assert result.fopdt is not None
+            fit = result.fopdt
+            print(
+                "Method: Ziegler-Nichols reaction curve   "
+                f"K={fit.gain:.6g}, tau={fit.time_constant_s:.6g} s, "
+                f"theta={fit.dead_time_s:.6g} s"
+            )
+        print(f"PID gains: Kp={result.gains.kp:.6g} Ki={result.gains.ki:.6g} Kd={result.gains.kd:.6g}")
+        if result.p_gains is not None:
+            print(f"P gains:   Kp={result.p_gains.kp:.6g}")
+        if result.pi_gains is not None:
+            print(f"PI gains:  Kp={result.pi_gains.kp:.6g} Ki={result.pi_gains.ki:.6g}")
+    else:
+        poles = _parse_complex_list(args.poles)
+        result = tune_pole_placement(model, poles)
+        if result.state_feedback_k is not None:
+            for index, row in enumerate(result.state_feedback_k):
+                print(f"State-feedback row {index + 1}: {_format_row(row)}")
+        print(
+            f"PID gains: Kp={result.gains.kp:.6g} Ki={result.gains.ki:.6g} Kd={result.gains.kd:.6g}"
+        )
+    print(result.message)
+
+
+def _command_sf(args) -> None:
+    model = _load_analysis_plant(args.config)
+    if args.method == "ackermann":
+        poles = _parse_complex_list(args.poles)
+        result = ackermann(model, poles)
+    else:
+        q = _parse_float_list(args.q)
+        result = lqr(model, q, args.r)
+    for index, row in enumerate(result.closed_loop_k):
+        print(f"K row {index + 1}: {_format_row(row)}")
+    print(f"N-bar: {result.nbar}")
+    print(f"Controllability rank: {result.controllability_rank} (order {result.order})")
+    print(f"Closed-loop poles: {_format_complex(result.closed_loop_poles)}")
+    if args.csv_output:
+        write_state_feedback_csv(result, args.csv_output)
+        print(f"Wrote step comparison to {args.csv_output}")
+    print(result.message)
+
+
+def _command_interconnect(args) -> None:
+    spec = load_interconnect_spec(args.config)
+    result = interconnect(spec)
+    print(f"Composite: num={list(result.composite_num)} den={list(result.composite_den)}")
+    print(f"BIBO stable: {result.stability.bibo_stable} - {result.stability.bibo_reason}")
+    if result.margins.phase_margin_deg is not None:
+        print(f"Phase margin: {result.margins.phase_margin_deg:.2f} deg")
+    if result.margins.gain_margin is not None:
+        print(
+            f"Gain margin: {result.margins.gain_margin:.4g} "
+            f"({result.margins.gain_margin_db:.2f} dB)"
+        )
+    print(f"Step settles at: {result.step.output[-1]:.6g}")
+    if args.bode:
+        plot_bode_margins(result.margins, output_path=args.bode)
+        print(f"Wrote Bode/margins plot to {args.bode}")
+    if args.nyquist:
+        plot_nyquist(result.nyquist, output_path=args.nyquist)
+        print(f"Wrote Nyquist plot to {args.nyquist}")
+    if args.rlocus:
+        plot_root_locus(result.root_locus, output_path=args.rlocus)
+        print(f"Wrote root-locus plot to {args.rlocus}")
+
+
 
 
 def main() -> None:
@@ -52,6 +245,45 @@ def main() -> None:
     mna_parser.add_argument("--csv-output", default="circuit.csv", help="node/component trace CSV")
     mna_parser.add_argument("--plot-output", default="circuit.png", help="node-voltage plot image")
     mna_parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="analyze a continuous SISO plant (report, stability, metrics)"
+    )
+    analyze_parser.add_argument("config", help="path to a plant JSON file")
+    analyze_parser.add_argument("--stop-time", type=float, default=10.0, help="horizon for step metrics")
+    analyze_parser.add_argument("--no-step", action="store_true", help="skip step-response metrics")
+    analyze_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
+    analyze_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
+    analyze_parser.add_argument("--rlocus", metavar="PNG", help="write a root-locus plot")
+    tune_parser = subparsers.add_parser(
+        "tune", help="tune PID gains (Ziegler-Nichols or pole placement)"
+    )
+    tune_parser.add_argument("config", help="path to a plant JSON file")
+    tune_parser.add_argument(
+        "--method", choices=["zn", "pole-placement"], default="zn", help="tuning method"
+    )
+    tune_parser.add_argument(
+        "--poles", default="", help="desired poles for pole placement, e.g. '-2+1j, -2-1j'"
+    )
+    sf_parser = subparsers.add_parser(
+        "sf", help="design full state feedback (Ackermann or LQR)"
+    )
+    sf_parser.add_argument("config", help="path to a plant JSON file")
+    sf_parser.add_argument(
+        "--method", choices=["ackermann", "lqr"], default="ackermann", help="design method"
+    )
+    sf_parser.add_argument(
+        "--poles", default="", help="desired poles for Ackermann, e.g. '-2, -3+1j, -3-1j'"
+    )
+    sf_parser.add_argument("--q", default="1", help="diagonal Q entries for LQR, e.g. '1,1'")
+    sf_parser.add_argument("--r", type=float, default=1.0, help="control weight R for LQR")
+    sf_parser.add_argument("--csv-output", default=None, help="open/closed step comparison CSV")
+    interconnect_parser = subparsers.add_parser(
+        "interconnect", help="compose blocks and analyze the resulting closed loop"
+    )
+    interconnect_parser.add_argument("config", help="path to an interconnect JSON file")
+    interconnect_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
+    interconnect_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
+    interconnect_parser.add_argument("--rlocus", metavar="PNG", help="write a root-locus plot")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -100,6 +332,27 @@ def main() -> None:
             f"Simulated {len(config.components)} components for {result.time[-1]:g} s "
             f"({len(result.time)} samples); wrote {args.csv_output} and {args.plot_output}"
         )
+    elif args.command == "analyze":
+        _run_with_errors(_command_analyze, args)
+    elif args.command == "tune":
+        if args.method == "pole-placement" and not args.poles:
+            parser.error("tune --method pole-placement requires --poles")
+        _run_with_errors(_command_tune, args)
+    elif args.command == "sf":
+        if args.method == "ackermann" and not args.poles:
+            parser.error("sf --method ackermann requires --poles")
+        _run_with_errors(_command_sf, args)
+    elif args.command == "interconnect":
+        _run_with_errors(_command_interconnect, args)
+
+
+def _run_with_errors(command, args) -> None:
+    """Run a command, mapping ValueErrors to a clean one-line message."""
+    try:
+        command(args)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
 
 
 if __name__ == "__main__":

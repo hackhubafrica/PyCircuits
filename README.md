@@ -17,11 +17,13 @@ engine modules under a **hybrid dependency policy**: everything works with
 numpy alone, while `pip install "pycircuits-sim[control]"` adds
 `python-control`/`scipy` fast paths for heavy numerics such as LQR.
 
-**Progress:** Phase 1 (analysis layer: `pycircuits_sim/analysis/`), Phase 2
-(design layer: `pycircuits_sim/design/`), and Phase 3 (block
-interconnections: `pycircuits_sim/interconnect.py`) are implemented and
-tested. Phase 4 (CLI/UI integration) remains. Read the full plan in
-`docs/`:
+**Progress:** Phases 1–4 of the merge plan are implemented and tested:
+Phase 1 (analysis layer: `pycircuits_sim/analysis/`), Phase 2 (design layer:
+`pycircuits_sim/design/`), Phase 3 (block interconnections:
+`pycircuits_sim/interconnect.py`), and Phase 4 (interfaces: `analyze`, `tune`,
+`sf`, and `interconnect` CLI subcommands, the **Control analysis** UI mode,
+and analysis plots). Phase 5 (optional FastAPI wrapper, ControlKit retirement)
+is deferred pending review. Read the full plan in `docs/`:
 
 - [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
 - [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
@@ -120,6 +122,15 @@ MNA JSON netlists with the file picker and save circuits as JSON with editor
 layout metadata plus standard MNA components/nodes. The editor currently covers
 two-terminal MNA parts; multi-terminal semiconductor packages and the later
 plant/controller block-diagram canvas are not included yet.
+
+In **Control analysis**, pick a continuous SISO plant (six example plants, or
+transfer-function/state-space entries) and choose a tool: plant report,
+stability verdicts, Bode margins, Nyquist plot, root locus, PID tuning
+(Ziegler–Nichols ultimate/reaction-curve or pole placement), state feedback
+(Ackermann or LQR with an open-vs-closed step comparison), or a PID-on-motor
+interconnection demo. Results appear as metric cards and interactive Plotly
+charts after pressing **Run analysis**. These tools mirror the `analyze`,
+`tune`, `sf`, and `interconnect` CLI subcommands below.
 
 ## CLI reference
 
@@ -290,6 +301,43 @@ conditioning. Circuits with floating modes can still be poorly conditioned,
 especially if `gmin` is disabled; contradictory ideal sources produce a
 singular-system diagnostic. Diode nonconvergence is reported with timestep,
 residual, and junction voltages.
+
+## Control analysis and design
+
+The control-theory layer (ported from ControlKit, implemented in pure numpy)
+works on continuous SISO plants loaded from the same plant JSON formats as
+`load_linear_plant` (`state_space` or `transfer_function`):
+
+```sh
+# Plant report, stability verdicts, and step metrics; optional plots.
+python -m pycircuits_sim.cli analyze examples/analysis_third_order.json \
+    --bode bode.png --nyquist nyquist.png --rlocus rlocus.png
+
+# Ziegler-Nichols PID tuning (ultimate-gain or reaction-curve fallback).
+python -m pycircuits_sim.cli tune examples/analysis_third_order.json
+
+# Pole placement with PID/PD coefficient matching.
+python -m pycircuits_sim.cli tune examples/transfer_function_second_order.json \
+    --method pole-placement --poles "-2+1j, -2-1j"
+
+# State feedback: Ackermann placement or LQR (numpy Hamiltonian solver;
+# scipy fast path when the [control] extra is installed).
+python -m pycircuits_sim.cli sf examples/state_feedback_third_order.json \
+    --method ackermann --poles "-2, -3+1j, -3-1j" --csv-output sf_steps.csv
+python -m pycircuits_sim.cli sf examples/state_feedback_third_order.json \
+    --method lqr --q 1,1,1 --r 1
+
+# Block interconnections: compose tf/ss/pid/gain blocks and analyze the loop.
+python -m pycircuits_sim.cli interconnect examples/interconnect_pid_loop.json \
+    --bode loop_bode.png
+```
+
+Plant JSON files only need the `type`, matrix, and coefficient fields; other
+keys are ignored by these commands. Interconnect JSON files hold `blocks`,
+`forward`, optional `parallel`, and `feedback` (`"none"`, `"unity"`, or a
+block-id array); see `examples/interconnect_pid_loop.json`. Tuning and design
+errors (unusable plants, uncontrollable systems, wrong pole counts) are
+reported as one-line `error:` messages.
 
 ## Model boundaries
 

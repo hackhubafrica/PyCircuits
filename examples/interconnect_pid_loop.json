@@ -1,0 +1,9 @@
+{
+  "blocks": [
+    {"id": "c", "kind": "pid", "gains": {"kp": 1.2, "ki": 0.4, "kd": 0.2}},
+    {"id": "g", "kind": "tf", "num": [4.0], "den": [1.0, 12.0, 0.0]}
+  ],
+  "forward": ["c", "g"],
+  "feedback": "unity",
+  "stop_time": 100.0
+}

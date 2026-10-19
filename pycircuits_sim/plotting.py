@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .analysis.margins import MarginResult
+from .analysis.nyquist import NyquistResult
+from .analysis.root_locus import RootLocusResult
 from .closed_loop import ClosedLoopResult
 from .io import WaveformData
 from .mna import CircuitResult
@@ -271,3 +274,111 @@ def plot_circuit(
     if show:
         plt.show()
     return figure, axis
+
+
+def _analysis_output(figure, output_path: str | Path | None, show: bool, title: str):
+    import matplotlib.pyplot as plt
+
+    if output_path is None and not show:
+        raise ValueError("provide output_path or set show=True")
+    figure.suptitle(title)
+    if output_path is not None:
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output, dpi=160)
+    if show:
+        plt.show()
+    return figure
+
+
+def plot_bode_margins(
+    margins: MarginResult,
+    output_path: str | Path | None = None,
+    show: bool = False,
+):
+    """Plot Bode magnitude/phase with gain/phase margin annotations."""
+    import matplotlib.pyplot as plt
+
+    figure, axes = plt.subplots(2, 1, sharex=True, figsize=(10, 6), layout="constrained")
+    frequency = margins.frequencies_rad_s
+    axes[0].semilogx(frequency, margins.magnitude_db, color="#167d83", linewidth=1.2)
+    axes[0].axhline(0.0, color="#383838", linewidth=0.8, linestyle="--")
+    axes[0].set_ylabel("Magnitude (dB)")
+    if margins.gain_crossover_rad_s is not None:
+        axes[0].axvline(
+            margins.gain_crossover_rad_s, color="#b07a16", linewidth=0.9, linestyle=":"
+        )
+    axes[1].semilogx(frequency, margins.phase_deg, color="#c54b35", linewidth=1.2)
+    axes[1].axhline(-180.0, color="#383838", linewidth=0.8, linestyle="--")
+    axes[1].set_ylabel("Phase (degrees)")
+    axes[1].set_xlabel("Frequency (rad/s)")
+    if margins.phase_crossover_rad_s is not None:
+        axes[1].axvline(
+            margins.phase_crossover_rad_s, color="#b07a16", linewidth=0.9, linestyle=":"
+        )
+    for axis in axes:
+        axis.grid(True, which="both", alpha=0.25)
+    legend = []
+    if margins.phase_margin_deg is not None:
+        legend.append(f"PM = {margins.phase_margin_deg:.1f} deg")
+    if margins.gain_margin is not None:
+        legend.append(f"GM = {margins.gain_margin:.3g} ({margins.gain_margin_db:.1f} dB)")
+    if legend:
+        axes[0].legend([", ".join(legend)], loc="best")
+    return _analysis_output(figure, output_path, show, "Bode magnitude/phase with margins")
+
+
+def plot_nyquist(
+    result: NyquistResult,
+    output_path: str | Path | None = None,
+    show: bool = False,
+):
+    """Plot the Nyquist diagram (imaginary vs real axis)."""
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(6, 6), layout="constrained")
+    axis.plot(result.real, result.imaginary, color="#167d83", linewidth=1.2)
+    axis.plot([-1.0], [0.0], marker="x", color="#c54b35", markersize=9)
+    axis.axhline(0.0, color="#383838", linewidth=0.6)
+    axis.axvline(0.0, color="#383838", linewidth=0.6)
+    axis.set_xlabel("Re G(jw)")
+    axis.set_ylabel("Im G(jw)")
+    axis.set_aspect("equal", adjustable="datalim")
+    axis.grid(True, alpha=0.25)
+    return _analysis_output(figure, output_path, show, "Nyquist plot")
+
+
+def plot_root_locus(
+    result: RootLocusResult,
+    output_path: str | Path | None = None,
+    show: bool = False,
+):
+    """Plot root-locus branches with open-loop pole/zero markers."""
+    import matplotlib.pyplot as plt
+
+    figure, axis = plt.subplots(figsize=(8, 6), layout="constrained")
+    colors = ["#167d83", "#c54b35", "#b07a16", "#5a4fa0", "#383835", "#7a2f8a"]
+    for index, branch in enumerate(result.branches):
+        real = [root.real for root in branch]
+        imag = [root.imag for root in branch]
+        axis.plot(
+            real,
+            imag,
+            color=colors[index % len(colors)],
+            linewidth=1.0,
+            label=f"Branch {index + 1}",
+        )
+    pole_real = [pole.real for pole in result.open_loop_poles]
+    pole_imag = [pole.imag for pole in result.open_loop_poles]
+    axis.plot(pole_real, pole_imag, marker="x", color="#383838", linestyle="none", markersize=9, label="Open-loop poles")
+    if result.open_loop_zeros:
+        zero_real = [zero.real for zero in result.open_loop_zeros]
+        zero_imag = [zero.imag for zero in result.open_loop_zeros]
+        axis.plot(zero_real, zero_imag, marker="o", color="#383838", linestyle="none", markersize=7, label="Open-loop zeros")
+    axis.axhline(0.0, color="#888888", linewidth=0.6)
+    axis.axvline(0.0, color="#888888", linewidth=0.6)
+    axis.set_xlabel("Real part")
+    axis.set_ylabel("Imaginary part")
+    axis.grid(True, alpha=0.25)
+    axis.legend(loc="best", fontsize=8)
+    return _analysis_output(figure, output_path, show, "Root locus")

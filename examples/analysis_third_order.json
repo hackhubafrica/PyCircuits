@@ -1,0 +1,8 @@
+{
+  "type": "transfer_function",
+  "name": "Third-order plant 1/((s+1)(s+2)(s+3))",
+  "numerator": [1.0],
+  "denominator": [1.0, 6.0, 11.0, 6.0],
+  "time_step": 0.001,
+  "stop_time": 10.0
+}
