@@ -17,13 +17,15 @@ engine modules under a **hybrid dependency policy**: everything works with
 numpy alone, while `pip install "pycircuits-sim[control]"` adds
 `python-control`/`scipy` fast paths for heavy numerics such as LQR.
 
-**Progress:** Phases 1–4 of the merge plan are implemented and tested:
+**Progress:** All five phases of the merge plan are implemented and tested:
 Phase 1 (analysis layer: `pycircuits_sim/analysis/`), Phase 2 (design layer:
 `pycircuits_sim/design/`), Phase 3 (block interconnections:
-`pycircuits_sim/interconnect.py`), and Phase 4 (interfaces: `analyze`, `tune`,
+`pycircuits_sim/interconnect.py`), Phase 4 (interfaces: `analyze`, `tune`,
 `sf`, and `interconnect` CLI subcommands, the **Control analysis** UI mode,
-and analysis plots). Phase 5 (optional FastAPI wrapper, ControlKit retirement)
-is deferred pending review. Read the full plan in `docs/`:
+and analysis plots), and Phase 5 (the optional ControlKit-compatible HTTP
+API in `pycircuits_sim/api.py`). The `ControlKit/` directory remains as a
+read-only reference archive pending review. Read the full plan in
+`docs/`:
 
 - [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
 - [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
@@ -338,6 +340,40 @@ keys are ignored by these commands. Interconnect JSON files hold `blocks`,
 block-id array); see `examples/interconnect_pid_loop.json`. Tuning and design
 errors (unusable plants, uncontrollable systems, wrong pole counts) are
 reported as one-line `error:` messages.
+
+## HTTP API (optional)
+
+`pycircuits_sim/api.py` is a thin FastAPI wrapper that **reuses ControlKit's
+API contract** — the same endpoint paths, request schemas, and response field
+shapes — so clients written against ControlKit work unchanged, but every
+computation runs on the pure-numpy PyCircuits engines. It is excluded from the
+core package imports, so the base install stays dependency-light:
+
+```sh
+python -m pip install "pycircuits-sim[api]"
+uvicorn pycircuits_sim.api:app --reload --port 8000
+```
+
+| Endpoint | Role |
+| --- | --- |
+| `GET /health` | Liveness check |
+| `POST /api/analyze` | Plant + stability + step/impulse + Bode/Nyquist/root locus |
+| `POST /api/plant/normalize` | TF/SS canonical forms, poles, zeros, DC gain |
+| `POST /api/simulate` | `step` / `impulse` / `custom` inputs |
+| `POST /api/stability` | BIBO and Lyapunov verdicts with reasons |
+| `POST /api/bode` | Magnitude, phase, Gm/Pm, crossovers |
+| `POST /api/nyquist` | G(jw) real/imag samples |
+| `POST /api/root-locus` | Locus branches vs gain |
+| `POST /api/pid/closed-loop` | Unity-feedback PID: loop and closed-loop steps + Bode |
+| `POST /api/pid/tune` | `zn` (ultimate or reaction curve) or `pole_placement` |
+| `POST /api/sf/ackermann` | Ackermann K for desired poles + N-bar step comparison |
+| `POST /api/sf/lqr` | LQR K, S from diagonal Q and scalar R |
+| `POST /api/interconnect` | Block algebra: series/parallel/feedback, full analysis |
+
+Engine modeling errors return HTTP 400 with the readable message (mirroring
+ControlKit's `ControlError` handling), and the boundary is SISO-only, exactly
+like ControlKit's `build_system`. Interactive documentation is served at
+`http://localhost:8000/docs`.
 
 ## Model boundaries
 

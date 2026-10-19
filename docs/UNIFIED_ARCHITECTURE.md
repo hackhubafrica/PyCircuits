@@ -244,6 +244,11 @@ function matching `frequency_response` style).
 
 ## 7. Phased roadmap
 
+> **Status (all phases complete):** Phases 1–5 are implemented and tested
+> (148 unittest cases). The `[control]` and `[api]` extras exist in
+> `pyproject.toml`; `ControlKit/` remains as a read-only reference archive
+> pending review for removal.
+
 Each phase is independently shippable: engine + tests first, CLI second, UI
 third. Acceptance = existing tests still pass + new tests green
 (`python -m unittest discover -s tests`) + demo commands run.
