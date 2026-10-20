@@ -12,10 +12,11 @@ from typing import Any
 import numpy as np
 
 from .buck import _step_count
+from .ir import IrMixin
 
 
 @dataclass(frozen=True)
-class StateSpaceModel:
+class StateSpaceModel(IrMixin):
     """Continuous-time LTI model: x_dot = A x + B u, y = C x + D u."""
 
     A: tuple[tuple[float, ...], ...]
@@ -66,7 +67,7 @@ class StateSpaceModel:
 
 
 @dataclass(frozen=True)
-class DiscreteStateSpaceModel:
+class DiscreteStateSpaceModel(IrMixin):
     """Discrete-time LTI model: x[k+1] = A x[k] + B u[k]."""
 
     A: tuple[tuple[float, ...], ...]
@@ -109,7 +110,7 @@ class DiscreteStateSpaceModel:
 
 
 @dataclass(frozen=True)
-class LinearSimulationResult:
+class LinearSimulationResult(IrMixin):
     time: list[float]
     inputs: dict[str, list[float]]
     states: dict[str, list[float]]
@@ -117,7 +118,7 @@ class LinearSimulationResult:
 
 
 @dataclass(frozen=True)
-class FrequencyResponseResult:
+class FrequencyResponseResult(IrMixin):
     frequencies_hz: list[float]
     response: list[list[list[complex]]]
     poles: list[complex]
@@ -144,7 +145,7 @@ class FrequencyResponseResult:
 
 
 @dataclass(frozen=True)
-class LinearPIDConfig:
+class LinearPIDConfig(IrMixin):
     kp: float
     ki: float
     kd: float
@@ -166,7 +167,7 @@ class LinearPIDConfig:
 
 
 @dataclass(frozen=True)
-class StepReference:
+class StepReference(IrMixin):
     initial: float
     final: float
     step_time: float
@@ -182,7 +183,7 @@ class StepReference:
 
 
 @dataclass(frozen=True)
-class LinearClosedLoopResult:
+class LinearClosedLoopResult(IrMixin):
     time: list[float]
     reference: list[float]
     output: list[float]

@@ -20,12 +20,13 @@ import numpy as np
 from ..linear_systems import StateSpaceModel
 from ..optional import try_import_control
 from .plant import require_continuous, require_siso
+from ..ir import IrMixin
 
 MIN_DECIBELS = -320.0
 
 
 @dataclass(frozen=True)
-class MarginResult:
+class MarginResult(IrMixin):
     """Bode samples plus classical margin verdicts.
 
     ``gain_margin`` is linear (1/|G| at the phase crossover); None means no

@@ -23,10 +23,11 @@ from .plant import (
     siso_polynomials,
     normalize_plant,
 )
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class RootLocusResult:
+class RootLocusResult(IrMixin):
     """Locus branches over a gain grid.
 
     ``branches[i]`` is the continuation of open-loop pole ``i``; each entry

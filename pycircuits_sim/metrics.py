@@ -7,10 +7,11 @@ import math
 from statistics import fmean
 
 from .sweep import SweepRun
+from .ir import IrMixin
 
 
 @dataclass(frozen=True)
-class RunMetrics:
+class RunMetrics(IrMixin):
     parameter: str
     value: float
     steady_state_window_start_s: float

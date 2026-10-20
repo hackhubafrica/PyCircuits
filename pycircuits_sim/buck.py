@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from .ir import IrMixin
 
 
 def _step_count(stop_time: float, time_step: float) -> int:
@@ -17,7 +18,7 @@ def _step_count(stop_time: float, time_step: float) -> int:
 
 
 @dataclass(frozen=True)
-class BuckConfig:
+class BuckConfig(IrMixin):
     input_voltage: float
     duty_cycle: float
     switching_frequency: float
@@ -63,7 +64,7 @@ class BuckConfig:
 
 
 @dataclass(frozen=True)
-class SimulationResult:
+class SimulationResult(IrMixin):
     time: list[float]
     inductor_current: list[float]
     output_voltage: list[float]

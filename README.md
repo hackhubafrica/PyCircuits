@@ -31,6 +31,15 @@ Read the full plan in `docs/`:
 - [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
 - [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
 - [`docs/PORTING_MAP.md`](docs/PORTING_MAP.md) — file-by-file transfer plan and porting conventions
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — the current position and the staged plan toward a modular MATLAB/Simulink replacement
+- [`docs/EXTENSION_LADDER.md`](docs/EXTENSION_LADDER.md) — the four-layer extension architecture (core → modeling → compile/execute → hardware)
+
+**Next stage (Stage 1 of the extension plan):** the shared IR is now
+implemented in `pycircuits_sim/ir.py` — a self-describing JSON format with a
+derived JSON Schema that every result dataclass round-trips through. It is
+the firewall that lets later front ends (Modelica, Julia, a hardware bridge)
+and back ends (JAX, CasADi, Rust) plug in without forking the engine. See
+[The shared IR](#the-shared-ir-interchange-format).
 
 ## Quick start
 
@@ -344,6 +353,38 @@ keys are ignored by these commands. Interconnect JSON files hold `blocks`,
 block-id array); see `examples/interconnect_pid_loop.json`. Tuning and design
 errors (unusable plants, uncontrollable systems, wrong pole counts) are
 reported as one-line `error:` messages.
+
+## The shared IR (interchange format)
+
+Every result dataclass can be encoded into a self-describing JSON document.
+This is the layer that lets a future front end (Modelica, Julia, a hardware
+bridge) or back end talk to PyCircuits without reimplementing its schema.
+
+```python
+from pycircuits_sim import from_ir, to_ir
+from pycircuits_sim.design import PIDGains
+
+payload = to_ir(PIDGains(1.0, 0.5, 0.25))
+# {"ir_version": "1.0", "kind": "PIDGains", "data": {...}}
+assert from_ir(payload) == PIDGains(1.0, 0.5, 0.25)
+```
+
+The envelope is `{"ir_version", "kind", "data"}`, where `kind` names the
+dataclass. `build_ir_schema()` derives the JSON Schema from the same
+registry that drives encoding and decoding, so the published schema and the
+runtime payload cannot drift apart:
+
+```python
+from pycircuits_sim import build_ir_schema, validate_ir
+
+schema = build_ir_schema()   # JSON Schema draft 2020-12
+validate_ir(payload)         # raises IrError on a malformed document
+```
+
+Complex numbers encode as `{"re", "im"}`. NaN and infinity are rejected with
+a readable error, because JSON cannot represent them. `register(SomeType)`
+lets an extension add its own dataclass to the registry so it round-trips
+through the IR too.
 
 ## HTTP API (optional)
 

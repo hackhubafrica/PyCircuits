@@ -24,10 +24,11 @@ import numpy as np
 from ..analysis.margins import bode_margins
 from ..analysis.plant import normalize_plant, require_continuous, require_siso
 from ..linear_systems import StateSpaceModel, simulate_state_space
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class PIDGains:
+class PIDGains(IrMixin):
     """Parallel-form PID coefficients (Kp + Ki/s + Kd*s)."""
 
     kp: float
@@ -41,7 +42,7 @@ class PIDGains:
 
 
 @dataclass(frozen=True)
-class FopdtFit:
+class FopdtFit(IrMixin):
     """First-order-plus-dead-time parameters K e^{-theta s} / (tau s + 1)."""
 
     gain: float
@@ -50,7 +51,7 @@ class FopdtFit:
 
 
 @dataclass(frozen=True)
-class TuneResult:
+class TuneResult(IrMixin):
     """Ziegler-Nichols tuning outcome.
 
     ``variant`` is "ultimate" (Ku/Pu from the phase crossover) or

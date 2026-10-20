@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 import math
 
 from .buck import BuckConfig, SimulationResult, simulate_buck
+from .ir import IrMixin
 
 
 SWEEPABLE_PARAMETERS = {
@@ -18,7 +19,7 @@ SWEEPABLE_PARAMETERS = {
 
 
 @dataclass(frozen=True)
-class SweepRun:
+class SweepRun(IrMixin):
     parameter: str
     value: float
     result: SimulationResult

@@ -14,10 +14,11 @@ from dataclasses import dataclass
 import math
 
 import numpy as np
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class StepMetrics:
+class StepMetrics(IrMixin):
     """Classical step-response measurements, all in seconds where timed."""
 
     rise_time_s: float | None

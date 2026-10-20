@@ -15,12 +15,13 @@ import numpy as np
 
 from ..linear_systems import StateSpaceModel
 from .plant import normalize_plant, require_continuous
+from ..ir import IrMixin
 
 TOL = 1e-9
 
 
 @dataclass(frozen=True)
-class StabilityReport:
+class StabilityReport(IrMixin):
     """BIBO and Lyapunov stability verdicts with explanatory reasons."""
 
     poles: tuple[complex, ...]

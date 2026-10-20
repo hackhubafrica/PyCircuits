@@ -30,6 +30,7 @@ from .linear_systems import (
     simulate_state_space,
     transfer_function_to_state_space,
 )
+from .ir import IrMixin
 
 MAX_BLOCKS = 6
 MAX_ORDER = 20
@@ -38,7 +39,7 @@ BLOCK_KINDS = ("tf", "ss", "pid", "gain")
 
 
 @dataclass(frozen=True)
-class InterconnectBlock:
+class InterconnectBlock(IrMixin):
     """One block of an interconnection.
 
     ``kind`` selects which fields matter: "tf" uses ``num``/``den``
@@ -70,7 +71,7 @@ class InterconnectBlock:
 
 
 @dataclass(frozen=True)
-class InterconnectSpec:
+class InterconnectSpec(IrMixin):
     """Block-algebra request: forward chain plus optional parallel/feedback.
 
     ``feedback`` is "none", "unity", or a tuple of block ids forming the
@@ -105,7 +106,7 @@ class InterconnectSpec:
 
 
 @dataclass(frozen=True)
-class InterconnectResult:
+class InterconnectResult(IrMixin):
     """Composite transfer function plus the full Phase 1 analysis payload.
 
     ``composite_num``/``composite_den`` are normalized to a monic

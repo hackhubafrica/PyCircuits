@@ -6,10 +6,11 @@ from dataclasses import dataclass
 import math
 
 from .buck import BuckConfig, BuckPlant, SimulationResult, _step_count
+from .ir import IrMixin
 
 
 @dataclass(frozen=True)
-class PIDConfig:
+class PIDConfig(IrMixin):
     kp: float
     ki: float
     kd: float
@@ -33,7 +34,7 @@ class PIDConfig:
 
 
 @dataclass(frozen=True)
-class ReferenceStep:
+class ReferenceStep(IrMixin):
     initial_voltage: float
     final_voltage: float
     step_time: float
@@ -51,7 +52,7 @@ class ReferenceStep:
 
 
 @dataclass(frozen=True)
-class ClosedLoopConfig:
+class ClosedLoopConfig(IrMixin):
     plant: BuckConfig
     controller: PIDConfig
     reference: ReferenceStep
@@ -70,7 +71,7 @@ class ClosedLoopConfig:
 
 
 @dataclass(frozen=True)
-class ClosedLoopResult:
+class ClosedLoopResult(IrMixin):
     time: list[float]
     inductor_current: list[float]
     output_voltage: list[float]

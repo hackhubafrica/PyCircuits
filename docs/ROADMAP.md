@@ -94,11 +94,32 @@ adopt any subset.
 > and control moat; the general-suite layers arrive only once their foundation
 > (the shared IR, below) exists.
 
-**Milestone A (next):** the shared IR. A single JSON Schema describing
+**Milestone A (done):** the shared IR. A single JSON Schema describing
 plants, blocks, interconnections, and analyses, with `to_ir()`/`from_ir()` on
 every frozen result dataclass, plus one canonical payload schema shared with
 `api.py` so the wire format and the IR cannot drift. This is the layer that
 makes every later extension a *plugin* rather than a *fork*.
+
+Implemented in `pycircuits_sim/ir.py` (578 lines):
+
+- `to_ir(value)` / `from_ir(payload)` with a self-describing envelope
+  (`{"ir_version", "kind", "data"}`) that names the dataclass it carries.
+- `IrMixin`, mixed into all 26 engine dataclasses, so every result exposes
+  `.to_ir()` and `.from_ir(...)` with no change to field order or equality.
+- `build_ir_schema()` derives the JSON Schema **from the same registry** that
+  drives encoding and decoding, so the published schema and the runtime
+  payload cannot drift apart.
+- `validate_ir(payload)` validates against that schema (uses `jsonschema`
+  when installed, falls back to a structural check so the core stays
+  dependency-free).
+- `register(kind)` lets an extension front end (a Modelica importer, a
+  hardware bridge) make its own result types round-trip through the IR.
+- Complex numbers encode as `{"re", "im"}`; NaN/inf are rejected with a
+  readable error because JSON cannot represent them.
+
+The IR is the firewall that keeps later stages additive: a Modelica front
+end, a Julia bridge, or a hardware runner all consume the same wire format
+instead of each inventing bespoke glue.
 
 **Milestone B:** a general graph interconnect model. `interconnect.py`
 currently models ordered forward/parallel/feedback chains only; a Simulink-

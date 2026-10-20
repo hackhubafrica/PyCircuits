@@ -20,10 +20,11 @@ from ..analysis.plant import require_continuous, require_siso
 from ..linear_systems import StateSpaceModel, simulate_state_space
 from ..optional import try_import_scipy
 from .tuning import ackermann_gain
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class StepTrace:
+class StepTrace(IrMixin):
     """Times and output samples of a unit-step simulation."""
 
     time_s: tuple[float, ...]
@@ -31,7 +32,7 @@ class StepTrace:
 
 
 @dataclass(frozen=True)
-class StateFeedbackResult:
+class StateFeedbackResult(IrMixin):
     """State-feedback design outcome with step comparisons.
 
     ``closed_loop_k`` is the row vector K (one tuple per state). ``nbar`` is

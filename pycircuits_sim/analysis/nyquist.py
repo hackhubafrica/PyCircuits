@@ -16,10 +16,11 @@ import numpy as np
 
 from ..linear_systems import StateSpaceModel
 from .plant import evaluate_siso_response, require_continuous, require_siso
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class NyquistResult:
+class NyquistResult(IrMixin):
     """Samples of G(jw) parameterized by rad/s frequency."""
 
     frequencies_rad_s: tuple[float, ...]

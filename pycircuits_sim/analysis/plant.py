@@ -13,10 +13,11 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..linear_systems import DiscreteStateSpaceModel, StateSpaceModel
+from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
-class PlantReport:
+class PlantReport(IrMixin):
     """Normalized description of a continuous-time state-space plant.
 
     ``numerator`` is None for MIMO plants (only SISO transfer functions are

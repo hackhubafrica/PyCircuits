@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from .buck import _step_count
+from .ir import IrMixin
 
 
 GROUND_NODES = {"0", "gnd", "ground"}
@@ -17,7 +18,7 @@ SOURCE_TYPES = {"voltage_source", "current_source"}
 
 
 @dataclass(frozen=True)
-class Component:
+class Component(IrMixin):
     name: str
     kind: str
     p: str
@@ -143,7 +144,7 @@ class Component:
 
 
 @dataclass(frozen=True)
-class MNAConfig:
+class MNAConfig(IrMixin):
     time_step: float
     stop_time: float
     components: tuple[Component, ...]
@@ -178,7 +179,7 @@ class MNAConfig:
 
 
 @dataclass(frozen=True)
-class CircuitResult:
+class CircuitResult(IrMixin):
     time: list[float]
     node_voltages: dict[str, list[float]]
     component_currents: dict[str, list[float]]
