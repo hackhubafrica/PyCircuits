@@ -12,7 +12,7 @@ Neither project is a validated design tool. Both are educational simulators.
 
 | | PyCircuits | ControlKit |
 |---|---|---|
-| Location | repository root (`pycircuits_sim/`) | `ControlKit/` (nested, its own git repo) |
+| Location | repository root (`pycircuits_sim/`) | `ControlKit/` (nested; removed after phase 5, recoverable from `d908402`) |
 | Git history | 4 commits: "Engine & Solver Foundation" ×2 → Streamlit UI → schematic GUI | 2 commits: "First release version 1.0.0" → "docs: rename project to ControlKit" |
 | Stated purpose | Educational **power-electronics and control-systems** simulator: buck converters, rectifier netlists, sampled PID loops, continuous/discrete state-space plants, transfer functions, interactive waveform analysis | SISO **control-systems workspace**: `python-control`/NumPy/SciPy behind FastAPI, Plotly.js dashboard for time response, stability, Bode, Nyquist, root locus, and PID |
 | Internal name | PyCircuits Workbench | "ControlLens" (FastAPI `title`, localStorage key `controllens.plant`, frontend package `controllens-ui`) |

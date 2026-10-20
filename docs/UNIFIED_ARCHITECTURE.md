@@ -30,9 +30,10 @@ file-by-file transfer plan is in [PORTING_MAP.md](PORTING_MAP.md).
      `python -m unittest discover -s tests`
    - match the indentation of the file you are editing (`linear_systems.py`
      uses tabs; `buck.py`/`mna.py` use 4 spaces)
-4. **ControlKit stays untouched** under `ControlKit/` as a read-only
+4. **ControlKit was kept untouched** under `ControlKit/` as a read-only
    reference archive during the port (its nested `.git` history preserved).
-   Marked deprecated in its README; deleted only after phase 4 acceptance.
+   Marked deprecated in its README; **deleted after phase 5 acceptance**
+   (recoverable from commit `d908402`).
 
 ## 2. Target module layout
 
@@ -75,7 +76,7 @@ docs/
     PROJECT_ANALYSIS.md    # this documentation set
     UNIFIED_ARCHITECTURE.md
     PORTING_MAP.md
-ControlKit/                # reference archive (deprecated, untouched)
+ControlKit/                # (removed after phase 5; recoverable from d908402)
 examples/
     ...existing JSON...
     analysis_plant.json    # + example plants for the analyze/tune CLI
@@ -245,9 +246,10 @@ function matching `frequency_response` style).
 ## 7. Phased roadmap
 
 > **Status (all phases complete):** Phases 1–5 are implemented and tested
-> (148 unittest cases). The `[control]` and `[api]` extras exist in
-> `pyproject.toml`; `ControlKit/` remains as a read-only reference archive
-> pending review for removal.
+> (148 unittest cases collected; 2 skipped without the optional `python-control`
+> and `scipy` dependencies). The `[control]` and `[api]` extras exist in
+> `pyproject.toml`; the `ControlKit/` archive has been removed and is
+> recoverable from commit `d908402`.
 
 Each phase is independently shippable: engine + tests first, CLI second, UI
 third. Acceptance = existing tests still pass + new tests green

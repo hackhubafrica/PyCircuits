@@ -8,14 +8,14 @@ validated for hardware design or safety decisions.
 
 ## Status & roadmap
 
-PyCircuits is the base project of a planned merge with **ControlKit** (kept
-under `ControlKit/` as a read-only reference archive). ControlKit's classical
-control-analysis features — stability verdicts, Bode margins, Nyquist, root
-locus, Ziegler–Nichols tuning, Ackermann/LQR state feedback, and block
-interconnections — are being ported into `pycircuits_sim` as pure-numpy
-engine modules under a **hybrid dependency policy**: everything works with
-numpy alone, while `pip install "pycircuits-sim[control]"` adds
-`python-control`/`scipy` fast paths for heavy numerics such as LQR.
+PyCircuits was the base project of a merge with **ControlKit**, a SISO
+control-systems workspace whose classical control-analysis features —
+stability verdicts, Bode margins, Nyquist, root locus, Ziegler–Nichols tuning,
+Ackermann/LQR state feedback, and block interconnections — have been ported
+into `pycircuits_sim` as pure-numpy engine modules under a **hybrid dependency
+policy**: everything works with numpy alone, while
+`pip install "pycircuits-sim[control]"` adds `python-control`/`scipy` fast
+paths for heavy numerics such as LQR.
 
 **Progress:** All five phases of the merge plan are implemented and tested:
 Phase 1 (analysis layer: `pycircuits_sim/analysis/`), Phase 2 (design layer:
@@ -23,9 +23,10 @@ Phase 1 (analysis layer: `pycircuits_sim/analysis/`), Phase 2 (design layer:
 `pycircuits_sim/interconnect.py`), Phase 4 (interfaces: `analyze`, `tune`,
 `sf`, and `interconnect` CLI subcommands, the **Control analysis** UI mode,
 and analysis plots), and Phase 5 (the optional ControlKit-compatible HTTP
-API in `pycircuits_sim/api.py`). The `ControlKit/` directory remains as a
-read-only reference archive pending review. Read the full plan in
-`docs/`:
+API in `pycircuits_sim/api.py`). The `ControlKit/` reference archive has been
+removed now that the port is complete; it remains recoverable from commit
+`d908402`, and `docs/PORTING_MAP.md` retains the full porting provenance.
+Read the full plan in `docs/`:
 
 - [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) — side-by-side analysis of both projects and the feature gap matrix
 - [`docs/UNIFIED_ARCHITECTURE.md`](docs/UNIFIED_ARCHITECTURE.md) — target design, module layout, CLI/UI integration, phased roadmap
@@ -35,7 +36,10 @@ read-only reference archive pending review. Read the full plan in
 
 The project requires Python 3.10 or newer. `requirements.txt` is a fully pinned
 snapshot of the current development virtual environment (Python 3.14.7), for
-reproducing that setup. On another supported Python version, install the project
+reproducing that setup. It includes the base dependencies plus the optional
+`[api]` extra (FastAPI/uvicorn/httpx); the `[control]` extra
+(`python-control`/`scipy`) is listed but **not** installed, which is why two
+unittest cases skip. On another supported Python version, install the project
 directly so pip can select compatible dependency builds:
 
 ```sh

@@ -92,5 +92,7 @@ Before merging any ported module, verify:
 8. Indentation/docstring style matches the file being edited; tabs in
    modules that use tabs (`linear_systems.py`), spaces in modules that use
    spaces (`buck.py`, `mna.py`).
-9. ControlKit source left unmodified (reference archive).
+9. ControlKit source left unmodified during the port (reference archive).
+   The archive was deleted after phase 5 acceptance; its files remain
+   recoverable from commit `d908402`.
 
