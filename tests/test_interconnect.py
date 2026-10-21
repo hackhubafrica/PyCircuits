@@ -1,6 +1,13 @@
 import unittest
 
 from pycircuits_sim.design import PIDGains
+from pycircuits_sim.graph import (
+    MAX_GRAPH_NODES,
+    GraphEdge,
+    GraphNode,
+    GraphSpec,
+    interconnect_graph,
+)
 from pycircuits_sim.interconnect import (
     MAX_BLOCKS,
     InterconnectBlock,
@@ -13,6 +20,16 @@ from pycircuits_sim.interconnect import (
 MOTOR = InterconnectBlock(id="g", kind="tf", num=(4.0,), den=(1.0, 12.0, 0.0))
 GAINS = PIDGains(kp=1.2, ki=0.4, kd=0.2)
 CONTROLLER = InterconnectBlock(id="c", kind="pid", gains=GAINS)
+# The graph engine needs proper blocks, so its controller carries a
+# derivative filter that removes the differentiator.
+FILTERED_CONTROLLER = InterconnectBlock(
+    id="c", kind="pid", gains=GAINS, derivative_filter=10.0
+)
+# A PI controller (kd = 0) is already proper: its padded numerator is
+# (0, kp, ki) over (1, 0), a first-order integrator with a zero.
+PI_CONTROLLER = InterconnectBlock(
+    id="c", kind="pid", gains=PIDGains(kp=1.2, ki=0.4, kd=0.0)
+)
 
 
 def _approx_tuple(values, expected, places: int = 9) -> None:
@@ -276,6 +293,263 @@ class InterconnectAnalysisPayloadTests(unittest.TestCase):
         self.assertEqual(len(result.step.output), len(result.step.time_s))
         self.assertIsNotNone(result.plant.numerator)
         self.assertEqual(result.plant.order, 3)
+
+
+class GraphAlgebraTests(unittest.TestCase):
+    def test_series_graph_matches_product(self) -> None:
+        # 2 * 1/(s+1) = 2/(s+1).
+        nodes = (
+            GraphNode("a", InterconnectBlock(id="a", kind="gain", k=2.0)),
+            GraphNode(
+                "b",
+                InterconnectBlock(id="b", kind="tf", num=(1.0,), den=(1.0, 1.0)),
+            ),
+        )
+        result = interconnect_graph(
+            GraphSpec(nodes, (GraphEdge("a", "b", 1.0),), "a", "b")
+        )
+        _approx_tuple(result.composite_num, [2.0])
+        _approx_tuple(result.composite_den, [1.0, 1.0])
+
+    def test_negative_feedback_edge_closes_the_loop(self) -> None:
+        # G = 2/(s+1) with unity negative feedback: 2/(s+3).
+        nodes = (
+            GraphNode("a", InterconnectBlock(id="a", kind="gain", k=2.0)),
+            GraphNode(
+                "b",
+                InterconnectBlock(id="b", kind="tf", num=(1.0,), den=(1.0, 1.0)),
+            ),
+        )
+        result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (GraphEdge("a", "b", 1.0), GraphEdge("b", "a", -1.0)),
+                "a",
+                "b",
+            )
+        )
+        _approx_tuple(result.composite_num, [2.0])
+        _approx_tuple(result.composite_den, [1.0, 3.0])
+
+    def test_graph_matches_chain_engine(self) -> None:
+        blocks = (FILTERED_CONTROLLER, MOTOR)
+        nodes = tuple(GraphNode(block.id, block) for block in blocks)
+        graph_result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (GraphEdge("c", "g", 1.0), GraphEdge("g", "c", -1.0)),
+                "c",
+                "g",
+                stop_time=100.0,
+            )
+        )
+        chain_result = interconnect(
+            InterconnectSpec(
+                blocks=blocks,
+                forward=("c", "g"),
+                feedback="unity",
+                stop_time=100.0,
+            )
+        )
+        _approx_tuple(graph_result.composite_num, chain_result.composite_num)
+        _approx_tuple(graph_result.composite_den, chain_result.composite_den)
+        self.assertAlmostEqual(
+            graph_result.step.output[-1], chain_result.step.output[-1], delta=1e-6
+        )
+
+    def test_pi_controller_is_proper_in_the_graph_engine(self) -> None:
+        # A PI controller has the padded numerator (0, kp, ki); it is a proper
+        # first-order block, so the graph engine must accept it and agree
+        # with the chain engine.
+        blocks = (PI_CONTROLLER, MOTOR)
+        nodes = tuple(GraphNode(block.id, block) for block in blocks)
+        graph_result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (GraphEdge("c", "g", 1.0), GraphEdge("g", "c", -1.0)),
+                "c",
+                "g",
+            )
+        )
+        chain_result = interconnect(
+            InterconnectSpec(
+                blocks=blocks, forward=("c", "g"), feedback="unity"
+            )
+        )
+        _approx_tuple(graph_result.composite_num, chain_result.composite_num)
+        _approx_tuple(graph_result.composite_den, chain_result.composite_den)
+        _approx_tuple(graph_result.composite_num, [4.8, 1.6])
+        _approx_tuple(graph_result.composite_den, [1.0, 12.0, 4.8, 1.6])
+
+    def test_summing_junction_adds_parallel_branches(self) -> None:
+        # 1/(s+1) + 2/(s+2) = (3s+4)/(s^2+3s+2).
+        nodes = (
+            GraphNode(
+                "src", InterconnectBlock(id="src", kind="gain", k=1.0)
+            ),
+            GraphNode(
+                "a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))
+            ),
+            GraphNode(
+                "b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))
+            ),
+            GraphNode("sum", InterconnectBlock(id="sum", kind="gain", k=1.0)),
+        )
+        result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (
+                    GraphEdge("src", "a", 1.0),
+                    GraphEdge("src", "b", 1.0),
+                    GraphEdge("a", "sum", 1.0),
+                    GraphEdge("b", "sum", 1.0),
+                ),
+                "src",
+                "sum",
+            )
+        )
+        _approx_tuple(result.composite_num, [3.0, 4.0])
+        _approx_tuple(result.composite_den, [1.0, 3.0, 2.0])
+
+    def test_unreachable_branch_is_pruned(self) -> None:
+        # The 'b' branch is never fed, so it must not add a pole to the
+        # composite: 1/(s+1), not 1/(s+1) + 2/(s+2).
+        nodes = (
+            GraphNode(
+                "a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))
+            ),
+            GraphNode(
+                "b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))
+            ),
+            GraphNode("sum", InterconnectBlock(id="sum", kind="gain", k=1.0)),
+        )
+        result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (GraphEdge("a", "sum", 1.0), GraphEdge("b", "sum", 1.0)),
+                "a",
+                "sum",
+            )
+        )
+        _approx_tuple(result.composite_num, [1.0])
+        _approx_tuple(result.composite_den, [1.0, 1.0])
+
+    def test_improper_pid_block_is_rejected(self) -> None:
+        # An unfiltered PID has a differentiator, so its transfer function
+        # (0.2 s^2 + 1.2 s + 0.4) / s is improper and cannot be realized
+        # as a finite-dimensional state-space system.
+        nodes = (GraphNode("c", CONTROLLER), GraphNode("g", MOTOR))
+        with self.assertRaisesRegex(ValueError, "derivative"):
+            interconnect_graph(
+                GraphSpec(
+                    nodes,
+                    (GraphEdge("c", "g", 1.0), GraphEdge("g", "c", -1.0)),
+                    "c",
+                    "g",
+                )
+            )
+
+    def test_edge_gain_scales_the_signal(self) -> None:
+        # A gain-3 edge into a 1/(s+1) block gives 3/(s+1).
+        nodes = (
+            GraphNode("a", InterconnectBlock(id="a", kind="gain", k=1.0)),
+            GraphNode(
+                "b",
+                InterconnectBlock(id="b", kind="tf", num=(1.0,), den=(1.0, 1.0)),
+            ),
+        )
+        result = interconnect_graph(
+            GraphSpec(nodes, (GraphEdge("a", "b", 3.0),), "a", "b")
+        )
+        _approx_tuple(result.composite_num, [3.0])
+        _approx_tuple(result.composite_den, [1.0, 1.0])
+
+    def test_static_graph_produces_static_composite(self) -> None:
+        # 100 in a unity negative loop gives 100/101.
+        nodes = (GraphNode("k", InterconnectBlock(id="k", kind="gain", k=100.0)),)
+        result = interconnect_graph(
+            GraphSpec(nodes, (GraphEdge("k", "k", -1.0),), "k", "k")
+        )
+        self.assertEqual(len(result.composite_den), 1)
+        self.assertAlmostEqual(result.composite_num[0], 100.0 / 101.0, places=9)
+        self.assertAlmostEqual(result.plant.dc_gain, 100.0 / 101.0, places=9)
+
+
+class GraphAnalysisPayloadTests(unittest.TestCase):
+    def test_graph_reports_full_analysis_payload(self) -> None:
+        nodes = (GraphNode("c", FILTERED_CONTROLLER), GraphNode("g", MOTOR))
+        result = interconnect_graph(
+            GraphSpec(
+                nodes,
+                (GraphEdge("c", "g", 1.0), GraphEdge("g", "c", -1.0)),
+                "c",
+                "g",
+                stop_time=100.0,
+            )
+        )
+        self.assertIsInstance(result, InterconnectResult)
+        self.assertTrue(result.stability.bibo_stable)
+        self.assertEqual(len(result.margins.frequencies_rad_s), 400)
+        self.assertEqual(len(result.nyquist.real), 400)
+        self.assertEqual(len(result.step.output), len(result.step.time_s))
+        self.assertEqual(result.plant.order, 4)
+
+
+class GraphValidationTests(unittest.TestCase):
+    def test_duplicate_node_id_rejected(self) -> None:
+        block = InterconnectBlock(id="a", kind="gain", k=1.0)
+        with self.assertRaisesRegex(ValueError, "unique"):
+            GraphSpec((GraphNode("a", block), GraphNode("a", block)), (), "a", "a")
+
+    def test_unknown_node_reference_rejected(self) -> None:
+        block = InterconnectBlock(id="a", kind="gain", k=1.0)
+        with self.assertRaisesRegex(ValueError, "unknown input node"):
+            GraphSpec((GraphNode("a", block),), (), "ghost", "a")
+        with self.assertRaisesRegex(ValueError, "unknown output node"):
+            GraphSpec((GraphNode("a", block),), (), "a", "ghost")
+
+    def test_edge_to_unknown_node_rejected(self) -> None:
+        block = InterconnectBlock(id="a", kind="gain", k=1.0)
+        with self.assertRaisesRegex(ValueError, "unknown source node"):
+            GraphSpec(
+                (GraphNode("a", block),), (GraphEdge("ghost", "a", 1.0),), "a", "a"
+            )
+        with self.assertRaisesRegex(ValueError, "unknown target node"):
+            GraphSpec(
+                (GraphNode("a", block),), (GraphEdge("a", "ghost", 1.0),), "a", "a"
+            )
+
+    def test_too_many_nodes_rejected(self) -> None:
+        block = InterconnectBlock(id="a", kind="gain", k=1.0)
+        nodes = tuple(
+            GraphNode(f"n{index}", block) for index in range(MAX_GRAPH_NODES + 1)
+        )
+        with self.assertRaisesRegex(ValueError, "at most"):
+            GraphSpec(nodes, (), "n0", "n0")
+
+    def test_empty_graph_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least one node"):
+            GraphSpec((), (), "a", "a")
+
+    def test_non_finite_edge_gain_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "finite"):
+            GraphEdge("a", "b", float("nan"))
+
+    def test_ill_posed_algebraic_loop_rejected(self) -> None:
+        # Two unit gains in a positive loop: the sum is not solvable.
+        nodes = (
+            GraphNode("a", InterconnectBlock(id="a", kind="gain", k=1.0)),
+            GraphNode("b", InterconnectBlock(id="b", kind="gain", k=1.0)),
+        )
+        with self.assertRaisesRegex(ValueError, "algebraic loop"):
+            interconnect_graph(
+                GraphSpec(
+                    nodes,
+                    (GraphEdge("a", "b", 1.0), GraphEdge("b", "a", 1.0)),
+                    "a",
+                    "b",
+                )
+            )
 
 
 if __name__ == "__main__":

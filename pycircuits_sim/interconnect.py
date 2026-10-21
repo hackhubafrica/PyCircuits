@@ -270,6 +270,77 @@ def _composite_model(num: np.ndarray, den: np.ndarray) -> StateSpaceModel:
     )
 
 
+def block_transfer_function(
+    block: InterconnectBlock,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Return the normalized transfer function of one block.
+
+    The result is ``(numerator, denominator)`` with descending powers of
+    ``s``, leading zeros trimmed, and a monic denominator. The chain engine
+    and the general graph engine share this conversion so both agree on
+    what a block means.
+
+    Trimming matters: a PI controller has the padded numerator
+    ``(0, kp, ki)`` over ``(1, 0)``, which is a proper first-order block
+    even though the raw coefficient lists have different lengths.
+    """
+    num, den = _block_rational(block)
+    normalized_num, normalized_den = _normalize_rational(num, den)
+    return (
+        tuple(float(value) for value in normalized_num),
+        tuple(float(value) for value in normalized_den),
+    )
+
+
+def analyze_composite(
+    num: Sequence[float],
+    den: Sequence[float],
+    stop_time: float = 10.0,
+    time_step: float | None = None,
+) -> InterconnectResult:
+    """Analyze a composite transfer function with the Phase 1 analysis layer.
+
+    ``num``/``den`` are descending-power coefficient lists. The composite
+    is normalized to a monic denominator and then analyzed for stability,
+    margins, Nyquist, root locus, and unit-step response.
+    """
+    numerator = np.asarray(num, dtype=float)
+    denominator = np.asarray(den, dtype=float)
+    if numerator.ndim != 1 or denominator.ndim != 1:
+        raise ValueError("composite coefficients must be 1-D arrays")
+    if numerator.size == 0 or denominator.size == 0:
+        raise ValueError("composite coefficients must be nonempty")
+    if not np.all(np.isfinite(numerator)) or not np.all(np.isfinite(denominator)):
+        raise ValueError("composite coefficients must all be finite")
+    normalized_num, normalized_den = _normalize_rational(numerator, denominator)
+    order = normalized_den.size - 1
+    if order > MAX_ORDER:
+        raise ValueError(
+            f"composite order {order} exceeds the limit of {MAX_ORDER}; "
+            "simplify the interconnection"
+        )
+
+    model = _composite_model(normalized_num, normalized_den)
+    step = float(stop_time)
+    resolved_step = float(time_step) if time_step is not None else step / 500.0
+    step_result = simulate_state_space(
+        model, resolved_step, step, lambda _t: (1.0,)
+    )
+    return InterconnectResult(
+        composite_num=tuple(float(value) for value in normalized_num),
+        composite_den=tuple(float(value) for value in normalized_den),
+        plant=normalize_plant(model),
+        stability=analyze_stability(model),
+        margins=bode_margins(model),
+        nyquist=nyquist_response(model),
+        root_locus=compute_root_locus(model),
+        step=StepTrace(
+            tuple(float(value) for value in step_result.time),
+            tuple(float(value) for value in step_result.outputs["y1"]),
+        ),
+    )
+
+
 def interconnect(spec: InterconnectSpec) -> InterconnectResult:
     """Compose blocks and analyze the resulting SISO closed loop.
 
@@ -315,33 +386,12 @@ def interconnect(spec: InterconnectSpec) -> InterconnectResult:
         )
 
     num, den = _normalize_rational(*composite)
-    order = den.size - 1
-    if order > MAX_ORDER:
-        raise ValueError(
-            f"composite order {order} exceeds the limit of {MAX_ORDER}; "
-            "simplify the interconnection"
-        )
-
-    model = _composite_model(num, den)
-    time_step = (
-        float(spec.time_step)
-        if spec.time_step is not None
-        else float(spec.stop_time) / 500.0
-    )
-    step_result = simulate_state_space(
-        model, time_step, float(spec.stop_time), lambda _t: (1.0,)
-    )
-    return InterconnectResult(
-        composite_num=tuple(float(value) for value in num),
-        composite_den=tuple(float(value) for value in den),
-        plant=normalize_plant(model),
-        stability=analyze_stability(model),
-        margins=bode_margins(model),
-        nyquist=nyquist_response(model),
-        root_locus=compute_root_locus(model),
-        step=StepTrace(
-            tuple(float(value) for value in step_result.time),
-            tuple(float(value) for value in step_result.outputs["y1"]),
+    return analyze_composite(
+        num,
+        den,
+        stop_time=float(spec.stop_time),
+        time_step=(
+            float(spec.time_step) if spec.time_step is not None else None
         ),
     )
 

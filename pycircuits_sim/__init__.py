@@ -36,6 +36,12 @@ from .design import (
     tune_pole_placement,
     ziegler_nichols,
 )
+from .graph import (
+	GraphEdge,
+	GraphNode,
+	GraphSpec,
+	interconnect_graph,
+)
 from .interconnect import (
     InterconnectBlock,
     InterconnectResult,
@@ -97,6 +103,9 @@ __all__ = [
 	"InterconnectBlock",
 	"InterconnectResult",
 	"InterconnectSpec",
+	"GraphEdge",
+	"GraphNode",
+	"GraphSpec",
 	"IR_VERSION",
 	"IrError",
 	"IrMixin",
@@ -132,6 +141,7 @@ __all__ = [
 	"tune_pole_placement",
 	"ziegler_nichols",
 	"interconnect",
+	"interconnect_graph",
 	"load_mna_config",
 	"load_linear_plant",
 	"frequency_response",

@@ -239,6 +239,7 @@ def _collect_registry() -> dict[str, type]:
         "pycircuits_sim.buck",
         "pycircuits_sim.closed_loop",
         "pycircuits_sim.design",
+        "pycircuits_sim.graph",
         "pycircuits_sim.interconnect",
         "pycircuits_sim.linear_systems",
         "pycircuits_sim.metrics",
