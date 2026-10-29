@@ -41,9 +41,7 @@ PENDULUM = transfer_function_to_state_space([1.0], [1.0, 0.0, -9.81])
 
 
 def _discrete_model() -> DiscreteStateSpaceModel:
-    return DiscreteStateSpaceModel.from_matrices(
-        [[0.9]], [[0.1]], [[1.0]], [[0.0]], 0.01
-    )
+    return DiscreteStateSpaceModel.from_matrices([[0.9]], [[0.1]], [[1.0]], [[0.0]], 0.01)
 
 
 def _mimo_model() -> StateSpaceModel:
@@ -87,12 +85,8 @@ class ZieglerNicholsTests(unittest.TestCase):
         self.assertAlmostEqual(result.p_gains.kp, 0.5 * result.ku, places=9)
         self.assertAlmostEqual(result.pi_gains.kp, 0.45 * result.ku, places=9)
         self.assertAlmostEqual(result.gains.kp, 0.6 * result.ku, places=9)
-        self.assertAlmostEqual(
-            result.gains.ki, 0.6 * result.ku / (result.pu / 2.0), places=9
-        )
-        self.assertAlmostEqual(
-            result.gains.kd, 0.6 * result.ku * (result.pu / 8.0), places=9
-        )
+        self.assertAlmostEqual(result.gains.ki, 0.6 * result.ku / (result.pu / 2.0), places=9)
+        self.assertAlmostEqual(result.gains.kd, 0.6 * result.ku * (result.pu / 8.0), places=9)
         self.assertIsNone(result.fopdt)
         self.assertIn("ultimate", result.message)
 
@@ -114,12 +108,8 @@ class ZieglerNicholsTests(unittest.TestCase):
         fit = result.fopdt
         expected_kp = 1.2 * fit.time_constant_s / (fit.gain * fit.dead_time_s)
         self.assertAlmostEqual(result.gains.kp, expected_kp, places=9)
-        self.assertAlmostEqual(
-            result.gains.ki, expected_kp / (2.0 * fit.dead_time_s), places=9
-        )
-        self.assertAlmostEqual(
-            result.gains.kd, expected_kp * (0.5 * fit.dead_time_s), places=9
-        )
+        self.assertAlmostEqual(result.gains.ki, expected_kp / (2.0 * fit.dead_time_s), places=9)
+        self.assertAlmostEqual(result.gains.kd, expected_kp * (0.5 * fit.dead_time_s), places=9)
 
     def test_unusable_plant_raises_readable_error(self) -> None:
         # Unstable pendulum: no finite Ku, no bounded reaction curve.
@@ -166,13 +156,9 @@ class PolePlacementTests(unittest.TestCase):
             tune_pole_placement(KNOWN, [-4.0 + 2.0j, -4.0 - 2.0j, -5.0])
 
     def test_third_order_plant_reports_only_state_feedback(self) -> None:
-        result = tune_pole_placement(
-            THIRD_ORDER, [-2.0, -3.0 + 1.0j, -3.0 - 1.0j]
-        )
+        result = tune_pole_placement(THIRD_ORDER, [-2.0, -3.0 + 1.0j, -3.0 - 1.0j])
         # No PID mapping for order-3 plants; gains zeroed, K still valid.
-        self.assertEqual(
-            (result.gains.kp, result.gains.ki, result.gains.kd), (0.0, 0.0, 0.0)
-        )
+        self.assertEqual((result.gains.kp, result.gains.ki, result.gains.kd), (0.0, 0.0, 0.0))
         self.assertIsNotNone(result.state_feedback_k)
         self.assertIn("Use K for state feedback", result.message)
 
@@ -211,9 +197,7 @@ class AckermannTests(unittest.TestCase):
         self.assertEqual(len(result.open_step.output), len(result.open_step.time_s))
         self.assertGreater(len(result.closed_step.output), 10)
         self.assertGreater(len(result.open_step.output), 10)
-        self.assertEqual(
-            len(result.desired_poles or ()), 3
-        )
+        self.assertEqual(len(result.desired_poles or ()), 3)
         # Closed-loop poles equal the desired poles.
         np.testing.assert_allclose(
             np.sort_complex(np.asarray(result.closed_loop_poles)),
@@ -309,8 +293,5 @@ if __name__ == "__main__":
     unittest.main()
 
 
-
 if __name__ == "__main__":
     unittest.main()
-
-

@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
+from ..ir import IrMixin
 from ..linear_systems import StateSpaceModel
 from .plant import evaluate_siso_response, require_continuous, require_siso
-from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
@@ -52,8 +51,7 @@ def nyquist_response(
             or np.any(frequencies <= 0)
         ):
             raise ValueError(
-                "frequencies_rad_s must be an increasing sequence of "
-                "positive finite values"
+                "frequencies_rad_s must be an increasing sequence of positive finite values"
             )
 
     response = evaluate_siso_response(model, frequencies)

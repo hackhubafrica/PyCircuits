@@ -22,21 +22,17 @@ GAINS = PIDGains(kp=1.2, ki=0.4, kd=0.2)
 CONTROLLER = InterconnectBlock(id="c", kind="pid", gains=GAINS)
 # The graph engine needs proper blocks, so its controller carries a
 # derivative filter that removes the differentiator.
-FILTERED_CONTROLLER = InterconnectBlock(
-    id="c", kind="pid", gains=GAINS, derivative_filter=10.0
-)
+FILTERED_CONTROLLER = InterconnectBlock(id="c", kind="pid", gains=GAINS, derivative_filter=10.0)
 # A PI controller (kd = 0) is already proper: its padded numerator is
 # (0, kp, ki) over (1, 0), a first-order integrator with a zero.
-PI_CONTROLLER = InterconnectBlock(
-    id="c", kind="pid", gains=PIDGains(kp=1.2, ki=0.4, kd=0.0)
-)
+PI_CONTROLLER = InterconnectBlock(id="c", kind="pid", gains=PIDGains(kp=1.2, ki=0.4, kd=0.0))
 
 
 def _approx_tuple(values, expected, places: int = 9) -> None:
     actual = tuple(values)
     if len(actual) != len(expected):
         raise AssertionError(f"length {len(actual)} != {len(expected)}: {actual}")
-    for got, want in zip(actual, expected):
+    for got, want in zip(actual, expected, strict=True):
         if round(abs(got - want), places) != 0:
             raise AssertionError(f"{actual} != {expected}")
 
@@ -144,13 +140,9 @@ class InterconnectAlgebraTests(unittest.TestCase):
         # PD with filter N on the derivative term changes the loop
         # polynomial; verify the filter is threaded through and the loop
         # stays stable.
-        filtered = InterconnectBlock(
-            id="c", kind="pid", gains=GAINS, derivative_filter=10.0
-        )
+        filtered = InterconnectBlock(id="c", kind="pid", gains=GAINS, derivative_filter=10.0)
         result = interconnect(
-            InterconnectSpec(
-                blocks=(filtered, MOTOR), forward=("c", "g"), feedback="unity"
-            )
+            InterconnectSpec(blocks=(filtered, MOTOR), forward=("c", "g"), feedback="unity")
         )
         # C = ((Kp+Kd*N)s^2 + (Kp*N+Ki)s + Ki*N) / (s(s+N)); with the plant
         # 4/(s^2+12s) the closed loop is order 4.
@@ -194,8 +186,7 @@ class InterconnectValidationTests(unittest.TestCase):
 
     def test_too_many_blocks_rejected(self) -> None:
         blocks = tuple(
-            InterconnectBlock(id=f"k{i}", kind="gain", k=1.0)
-            for i in range(MAX_BLOCKS + 1)
+            InterconnectBlock(id=f"k{i}", kind="gain", k=1.0) for i in range(MAX_BLOCKS + 1)
         )
         with self.assertRaisesRegex(ValueError, "at most"):
             interconnect(InterconnectSpec(blocks=blocks, forward=("k0",)))
@@ -207,17 +198,13 @@ class InterconnectValidationTests(unittest.TestCase):
         big2 = InterconnectBlock(id="b2", kind="tf", num=(1.0,), den=den)
         with self.assertRaisesRegex(ValueError, "exceeds the limit of 20"):
             interconnect(
-                InterconnectSpec(
-                    blocks=(big1, big2), forward=("b1", "b2"), feedback="none"
-                )
+                InterconnectSpec(blocks=(big1, big2), forward=("b1", "b2"), feedback="none")
             )
 
     def test_improper_composite_rejected(self) -> None:
         improper = InterconnectBlock(id="d", kind="tf", num=(1.0, 1.0), den=(1.0,))
         with self.assertRaisesRegex(ValueError, "improper"):
-            interconnect(
-                InterconnectSpec(blocks=(improper,), forward=("d",), feedback="none")
-            )
+            interconnect(InterconnectSpec(blocks=(improper,), forward=("d",), feedback="none"))
 
     def test_mimo_state_space_block_rejected(self) -> None:
         mimo = InterconnectBlock(
@@ -234,27 +221,19 @@ class InterconnectValidationTests(unittest.TestCase):
     def test_missing_block_fields_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "needs num and den"):
             interconnect(
-                InterconnectSpec(
-                    blocks=(InterconnectBlock(id="t", kind="tf"),), forward=("t",)
-                )
+                InterconnectSpec(blocks=(InterconnectBlock(id="t", kind="tf"),), forward=("t",))
             )
         with self.assertRaisesRegex(ValueError, "needs A, B, and C"):
             interconnect(
-                InterconnectSpec(
-                    blocks=(InterconnectBlock(id="s", kind="ss"),), forward=("s",)
-                )
+                InterconnectSpec(blocks=(InterconnectBlock(id="s", kind="ss"),), forward=("s",))
             )
         with self.assertRaisesRegex(ValueError, "needs gains"):
             interconnect(
-                InterconnectSpec(
-                    blocks=(InterconnectBlock(id="p", kind="pid"),), forward=("p",)
-                )
+                InterconnectSpec(blocks=(InterconnectBlock(id="p", kind="pid"),), forward=("p",))
             )
         with self.assertRaisesRegex(ValueError, "finite k"):
             interconnect(
-                InterconnectSpec(
-                    blocks=(InterconnectBlock(id="k", kind="gain"),), forward=("k",)
-                )
+                InterconnectSpec(blocks=(InterconnectBlock(id="k", kind="gain"),), forward=("k",))
             )
 
     def test_empty_forward_path_rejected_at_construction(self) -> None:
@@ -282,9 +261,7 @@ class InterconnectValidationTests(unittest.TestCase):
 class InterconnectAnalysisPayloadTests(unittest.TestCase):
     def test_payload_carries_full_phase1_analysis(self) -> None:
         result = interconnect(
-            InterconnectSpec(
-                blocks=(CONTROLLER, MOTOR), forward=("c", "g"), feedback="unity"
-            )
+            InterconnectSpec(blocks=(CONTROLLER, MOTOR), forward=("c", "g"), feedback="unity")
         )
         self.assertTrue(result.stability.bibo_stable)
         self.assertEqual(len(result.margins.frequencies_rad_s), 400)
@@ -305,9 +282,7 @@ class GraphAlgebraTests(unittest.TestCase):
                 InterconnectBlock(id="b", kind="tf", num=(1.0,), den=(1.0, 1.0)),
             ),
         )
-        result = interconnect_graph(
-            GraphSpec(nodes, (GraphEdge("a", "b", 1.0),), "a", "b")
-        )
+        result = interconnect_graph(GraphSpec(nodes, (GraphEdge("a", "b", 1.0),), "a", "b"))
         _approx_tuple(result.composite_num, [2.0])
         _approx_tuple(result.composite_den, [1.0, 1.0])
 
@@ -372,9 +347,7 @@ class GraphAlgebraTests(unittest.TestCase):
             )
         )
         chain_result = interconnect(
-            InterconnectSpec(
-                blocks=blocks, forward=("c", "g"), feedback="unity"
-            )
+            InterconnectSpec(blocks=blocks, forward=("c", "g"), feedback="unity")
         )
         _approx_tuple(graph_result.composite_num, chain_result.composite_num)
         _approx_tuple(graph_result.composite_den, chain_result.composite_den)
@@ -384,15 +357,9 @@ class GraphAlgebraTests(unittest.TestCase):
     def test_summing_junction_adds_parallel_branches(self) -> None:
         # 1/(s+1) + 2/(s+2) = (3s+4)/(s^2+3s+2).
         nodes = (
-            GraphNode(
-                "src", InterconnectBlock(id="src", kind="gain", k=1.0)
-            ),
-            GraphNode(
-                "a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))
-            ),
-            GraphNode(
-                "b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))
-            ),
+            GraphNode("src", InterconnectBlock(id="src", kind="gain", k=1.0)),
+            GraphNode("a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))),
+            GraphNode("b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))),
             GraphNode("sum", InterconnectBlock(id="sum", kind="gain", k=1.0)),
         )
         result = interconnect_graph(
@@ -415,12 +382,8 @@ class GraphAlgebraTests(unittest.TestCase):
         # The 'b' branch is never fed, so it must not add a pole to the
         # composite: 1/(s+1), not 1/(s+1) + 2/(s+2).
         nodes = (
-            GraphNode(
-                "a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))
-            ),
-            GraphNode(
-                "b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))
-            ),
+            GraphNode("a", InterconnectBlock(id="a", kind="tf", num=(1.0,), den=(1.0, 1.0))),
+            GraphNode("b", InterconnectBlock(id="b", kind="tf", num=(2.0,), den=(1.0, 2.0))),
             GraphNode("sum", InterconnectBlock(id="sum", kind="gain", k=1.0)),
         )
         result = interconnect_graph(
@@ -458,18 +421,14 @@ class GraphAlgebraTests(unittest.TestCase):
                 InterconnectBlock(id="b", kind="tf", num=(1.0,), den=(1.0, 1.0)),
             ),
         )
-        result = interconnect_graph(
-            GraphSpec(nodes, (GraphEdge("a", "b", 3.0),), "a", "b")
-        )
+        result = interconnect_graph(GraphSpec(nodes, (GraphEdge("a", "b", 3.0),), "a", "b"))
         _approx_tuple(result.composite_num, [3.0])
         _approx_tuple(result.composite_den, [1.0, 1.0])
 
     def test_static_graph_produces_static_composite(self) -> None:
         # 100 in a unity negative loop gives 100/101.
         nodes = (GraphNode("k", InterconnectBlock(id="k", kind="gain", k=100.0)),)
-        result = interconnect_graph(
-            GraphSpec(nodes, (GraphEdge("k", "k", -1.0),), "k", "k")
-        )
+        result = interconnect_graph(GraphSpec(nodes, (GraphEdge("k", "k", -1.0),), "k", "k"))
         self.assertEqual(len(result.composite_den), 1)
         self.assertAlmostEqual(result.composite_num[0], 100.0 / 101.0, places=9)
         self.assertAlmostEqual(result.plant.dc_gain, 100.0 / 101.0, places=9)
@@ -511,19 +470,13 @@ class GraphValidationTests(unittest.TestCase):
     def test_edge_to_unknown_node_rejected(self) -> None:
         block = InterconnectBlock(id="a", kind="gain", k=1.0)
         with self.assertRaisesRegex(ValueError, "unknown source node"):
-            GraphSpec(
-                (GraphNode("a", block),), (GraphEdge("ghost", "a", 1.0),), "a", "a"
-            )
+            GraphSpec((GraphNode("a", block),), (GraphEdge("ghost", "a", 1.0),), "a", "a")
         with self.assertRaisesRegex(ValueError, "unknown target node"):
-            GraphSpec(
-                (GraphNode("a", block),), (GraphEdge("a", "ghost", 1.0),), "a", "a"
-            )
+            GraphSpec((GraphNode("a", block),), (GraphEdge("a", "ghost", 1.0),), "a", "a")
 
     def test_too_many_nodes_rejected(self) -> None:
         block = InterconnectBlock(id="a", kind="gain", k=1.0)
-        nodes = tuple(
-            GraphNode(f"n{index}", block) for index in range(MAX_GRAPH_NODES + 1)
-        )
+        nodes = tuple(GraphNode(f"n{index}", block) for index in range(MAX_GRAPH_NODES + 1))
         with self.assertRaisesRegex(ValueError, "at most"):
             GraphSpec(nodes, (), "n0", "n0")
 
@@ -554,6 +507,3 @@ class GraphValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

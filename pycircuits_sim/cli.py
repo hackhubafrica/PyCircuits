@@ -17,16 +17,18 @@ from .analysis import (
 from .buck import simulate_buck
 from .closed_loop import simulate_closed_loop
 from .design import ackermann, lqr, tune_pole_placement, ziegler_nichols
+from .graph import interconnect_graph
 from .interconnect import interconnect
 from .io import (
-    load_config,
+    load_block_diagram,
     load_closed_loop_config,
+    load_config,
     load_interconnect_spec,
     load_mna_config_file,
     load_sweep_config,
     read_waveforms_csv,
-    write_csv,
     write_closed_loop_csv,
+    write_csv,
     write_metrics_csv,
     write_mna_csv,
     write_state_feedback_csv,
@@ -114,10 +116,7 @@ def _command_analyze(args) -> None:
     if report.zeros:
         print(f"Zeros: {_format_complex(report.zeros)}")
     print(f"BIBO stable: {stability.bibo_stable} - {stability.bibo_reason}")
-    print(
-        "Lyapunov asymptotic: "
-        f"{stability.lyapunov_asymptotic} - {stability.lyapunov_reason}"
-    )
+    print(f"Lyapunov asymptotic: {stability.lyapunov_asymptotic} - {stability.lyapunov_reason}")
 
     if model.input_count == 1 and model.output_count == 1 and not args.no_step:
         result = simulate_state_space(
@@ -155,7 +154,9 @@ def _command_tune(args) -> None:
                 f"K={fit.gain:.6g}, tau={fit.time_constant_s:.6g} s, "
                 f"theta={fit.dead_time_s:.6g} s"
             )
-        print(f"PID gains: Kp={result.gains.kp:.6g} Ki={result.gains.ki:.6g} Kd={result.gains.kd:.6g}")
+        print(
+            f"PID gains: Kp={result.gains.kp:.6g} Ki={result.gains.ki:.6g} Kd={result.gains.kd:.6g}"
+        )
         if result.p_gains is not None:
             print(f"P gains:   Kp={result.p_gains.kp:.6g}")
         if result.pi_gains is not None:
@@ -215,6 +216,33 @@ def _command_interconnect(args) -> None:
         print(f"Wrote root-locus plot to {args.rlocus}")
 
 
+def _command_block_diagram(args) -> None:
+    """Compose a block-diagram canvas and report the closed-loop analysis."""
+    document = load_block_diagram(args.config)
+    result = interconnect_graph(document.to_graph())
+    print(
+        f"Blocks: {len(document.nodes)} | Connections: {len(document.edges)} | "
+        f"reference -> {document.input_node} | tap -> {document.output_node}"
+    )
+    print(f"Composite: num={list(result.composite_num)} den={list(result.composite_den)}")
+    print(f"BIBO stable: {result.stability.bibo_stable} - {result.stability.bibo_reason}")
+    if result.margins.phase_margin_deg is not None:
+        print(f"Phase margin: {result.margins.phase_margin_deg:.2f} deg")
+    if result.margins.gain_margin is not None:
+        print(
+            f"Gain margin: {result.margins.gain_margin:.4g} "
+            f"({result.margins.gain_margin_db:.2f} dB)"
+        )
+    print(f"Step settles at: {result.step.output[-1]:.6g}")
+    if args.bode:
+        plot_bode_margins(result.margins, output_path=args.bode)
+        print(f"Wrote Bode/margins plot to {args.bode}")
+    if args.nyquist:
+        plot_nyquist(result.nyquist, output_path=args.nyquist)
+        print(f"Wrote Nyquist plot to {args.nyquist}")
+    if args.rlocus:
+        plot_root_locus(result.root_locus, output_path=args.rlocus)
+        print(f"Wrote root-locus plot to {args.rlocus}")
 
 
 def main() -> None:
@@ -226,30 +254,60 @@ def main() -> None:
     plot_parser = subparsers.add_parser("plot", help="plot a waveform CSV")
     plot_parser.add_argument("input", help="path to a waveform CSV")
     plot_parser.add_argument("--output", default="waveforms.png", help="output image path")
-    plot_parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
+    plot_parser.add_argument(
+        "--show", action="store_true", help="also open an interactive plot window"
+    )
     sweep_parser = subparsers.add_parser("sweep", help="run and plot a parameter sweep")
     sweep_parser.add_argument("config", help="path to a sweep JSON configuration")
     sweep_parser.add_argument("--csv-output", default="sweep.csv", help="long-form output CSV path")
     sweep_parser.add_argument("--plot-output", default="sweep.png", help="overlay plot image path")
-    sweep_parser.add_argument("--metrics-output", default="sweep_metrics.csv", help="per-run metrics CSV path")
-    sweep_parser.add_argument("--steady-state-fraction", type=float, default=0.1, help="final sample fraction used for steady-state metrics")
-    sweep_parser.add_argument("--settling-band", type=float, default=0.02, help="relative settling band, for example 0.02 for 2 percent")
-    sweep_parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
-    closed_parser = subparsers.add_parser("closed-loop", help="run a PID-controlled buck simulation")
+    sweep_parser.add_argument(
+        "--metrics-output", default="sweep_metrics.csv", help="per-run metrics CSV path"
+    )
+    sweep_parser.add_argument(
+        "--steady-state-fraction",
+        type=float,
+        default=0.1,
+        help="final sample fraction used for steady-state metrics",
+    )
+    sweep_parser.add_argument(
+        "--settling-band",
+        type=float,
+        default=0.02,
+        help="relative settling band, for example 0.02 for 2 percent",
+    )
+    sweep_parser.add_argument(
+        "--show", action="store_true", help="also open an interactive plot window"
+    )
+    closed_parser = subparsers.add_parser(
+        "closed-loop", help="run a PID-controlled buck simulation"
+    )
     closed_parser.add_argument("config", help="path to a closed-loop JSON configuration")
-    closed_parser.add_argument("--csv-output", default="closed_loop.csv", help="controller and plant trace CSV")
-    closed_parser.add_argument("--plot-output", default="closed_loop.png", help="closed-loop plot image")
-    closed_parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
-    mna_parser = subparsers.add_parser("mna", help="simulate a component netlist with transient MNA")
+    closed_parser.add_argument(
+        "--csv-output", default="closed_loop.csv", help="controller and plant trace CSV"
+    )
+    closed_parser.add_argument(
+        "--plot-output", default="closed_loop.png", help="closed-loop plot image"
+    )
+    closed_parser.add_argument(
+        "--show", action="store_true", help="also open an interactive plot window"
+    )
+    mna_parser = subparsers.add_parser(
+        "mna", help="simulate a component netlist with transient MNA"
+    )
     mna_parser.add_argument("config", help="path to an MNA JSON netlist")
     mna_parser.add_argument("--csv-output", default="circuit.csv", help="node/component trace CSV")
     mna_parser.add_argument("--plot-output", default="circuit.png", help="node-voltage plot image")
-    mna_parser.add_argument("--show", action="store_true", help="also open an interactive plot window")
+    mna_parser.add_argument(
+        "--show", action="store_true", help="also open an interactive plot window"
+    )
     analyze_parser = subparsers.add_parser(
         "analyze", help="analyze a continuous SISO plant (report, stability, metrics)"
     )
     analyze_parser.add_argument("config", help="path to a plant JSON file")
-    analyze_parser.add_argument("--stop-time", type=float, default=10.0, help="horizon for step metrics")
+    analyze_parser.add_argument(
+        "--stop-time", type=float, default=10.0, help="horizon for step metrics"
+    )
     analyze_parser.add_argument("--no-step", action="store_true", help="skip step-response metrics")
     analyze_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
     analyze_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
@@ -264,9 +322,7 @@ def main() -> None:
     tune_parser.add_argument(
         "--poles", default="", help="desired poles for pole placement, e.g. '-2+1j, -2-1j'"
     )
-    sf_parser = subparsers.add_parser(
-        "sf", help="design full state feedback (Ackermann or LQR)"
-    )
+    sf_parser = subparsers.add_parser("sf", help="design full state feedback (Ackermann or LQR)")
     sf_parser.add_argument("config", help="path to a plant JSON file")
     sf_parser.add_argument(
         "--method", choices=["ackermann", "lqr"], default="ackermann", help="design method"
@@ -284,6 +340,14 @@ def main() -> None:
     interconnect_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
     interconnect_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
     interconnect_parser.add_argument("--rlocus", metavar="PNG", help="write a root-locus plot")
+    block_parser = subparsers.add_parser(
+        "block-diagram",
+        help="compose a block-diagram canvas and analyze the resulting closed loop",
+    )
+    block_parser.add_argument("config", help="path to a block-diagram JSON file")
+    block_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
+    block_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
+    block_parser.add_argument("--rlocus", metavar="PNG", help="write a root-locus plot")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -344,6 +408,8 @@ def main() -> None:
         _run_with_errors(_command_sf, args)
     elif args.command == "interconnect":
         _run_with_errors(_command_interconnect, args)
+    elif args.command == "block-diagram":
+        _run_with_errors(_command_block_diagram, args)
 
 
 def _run_with_errors(command, args) -> None:

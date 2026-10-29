@@ -9,11 +9,12 @@ time. Definitions match python-control closely but are computed directly on
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
+
 from ..ir import IrMixin
 
 
@@ -60,7 +61,9 @@ def step_metrics(
     t = np.asarray(times, dtype=float)
     y = np.asarray(values, dtype=float)
     if t.ndim != 1 or y.ndim != 1 or t.size != y.size or t.size < 2:
-        raise ValueError("times and values must be equal-length 1-D sequences of at least two samples")
+        raise ValueError(
+            "times and values must be equal-length 1-D sequences of at least two samples"
+        )
     if not np.all(np.isfinite(t)) or not np.all(np.isfinite(y)):
         raise ValueError("times and values must contain only finite samples")
     if np.any(np.diff(t) <= 0):

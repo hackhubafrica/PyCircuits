@@ -88,10 +88,7 @@ def plot_sweep(
     if parameter not in SWEEPABLE_PARAMETERS:
         raise ValueError(f"unsupported sweep parameter {parameter!r}")
     reference_time = runs[0].result.time
-    if any(
-        run.parameter != parameter or run.result.time != reference_time
-        for run in runs
-    ):
+    if any(run.parameter != parameter or run.result.time != reference_time for run in runs):
         raise ValueError("sweep traces must share a parameter and time grid")
 
     import matplotlib.pyplot as plt
@@ -305,9 +302,7 @@ def plot_bode_margins(
     axes[0].axhline(0.0, color="#383838", linewidth=0.8, linestyle="--")
     axes[0].set_ylabel("Magnitude (dB)")
     if margins.gain_crossover_rad_s is not None:
-        axes[0].axvline(
-            margins.gain_crossover_rad_s, color="#b07a16", linewidth=0.9, linestyle=":"
-        )
+        axes[0].axvline(margins.gain_crossover_rad_s, color="#b07a16", linewidth=0.9, linestyle=":")
     axes[1].semilogx(frequency, margins.phase_deg, color="#c54b35", linewidth=1.2)
     axes[1].axhline(-180.0, color="#383838", linewidth=0.8, linestyle="--")
     axes[1].set_ylabel("Phase (degrees)")
@@ -370,11 +365,27 @@ def plot_root_locus(
         )
     pole_real = [pole.real for pole in result.open_loop_poles]
     pole_imag = [pole.imag for pole in result.open_loop_poles]
-    axis.plot(pole_real, pole_imag, marker="x", color="#383838", linestyle="none", markersize=9, label="Open-loop poles")
+    axis.plot(
+        pole_real,
+        pole_imag,
+        marker="x",
+        color="#383838",
+        linestyle="none",
+        markersize=9,
+        label="Open-loop poles",
+    )
     if result.open_loop_zeros:
         zero_real = [zero.real for zero in result.open_loop_zeros]
         zero_imag = [zero.imag for zero in result.open_loop_zeros]
-        axis.plot(zero_real, zero_imag, marker="o", color="#383838", linestyle="none", markersize=7, label="Open-loop zeros")
+        axis.plot(
+            zero_real,
+            zero_imag,
+            marker="o",
+            color="#383838",
+            linestyle="none",
+            markersize=7,
+            label="Open-loop zeros",
+        )
     axis.axhline(0.0, color="#888888", linewidth=0.6)
     axis.axvline(0.0, color="#888888", linewidth=0.6)
     axis.set_xlabel("Real part")

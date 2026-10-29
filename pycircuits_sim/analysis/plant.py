@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..linear_systems import DiscreteStateSpaceModel, StateSpaceModel
 from ..ir import IrMixin
+from ..linear_systems import DiscreteStateSpaceModel, StateSpaceModel
 
 
 @dataclass(frozen=True)
@@ -125,9 +125,7 @@ def normalize_plant(model: StateSpaceModel) -> PlantReport:
             candidate = float(D.item() + (C @ solution).item())
         except np.linalg.LinAlgError:
             candidate = None
-        dc_gain = (
-            candidate if candidate is not None and np.isfinite(candidate) else None
-        )
+        dc_gain = candidate if candidate is not None and np.isfinite(candidate) else None
 
     return PlantReport(
         numerator=numerator,
@@ -169,9 +167,6 @@ def evaluate_siso_response(model: StateSpaceModel, omega_rads) -> np.ndarray:
         try:
             transfer = C @ np.linalg.solve(1j * frequency * identity - A, B) + D
         except np.linalg.LinAlgError as error:
-            raise ValueError(
-                f"frequency response solve failed at {frequency:g} rad/s"
-            ) from error
+            raise ValueError(f"frequency response solve failed at {frequency:g} rad/s") from error
         values[index] = complex(transfer.item())
     return values
-

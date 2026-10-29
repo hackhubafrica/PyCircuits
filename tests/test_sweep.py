@@ -26,9 +26,7 @@ def make_config() -> BuckConfig:
 
 class ParameterSweepTests(unittest.TestCase):
     def test_sweep_runs_aligned_distinct_traces(self) -> None:
-        runs = run_parameter_sweep(
-            make_config(), "inductance", [0.0005, 0.001, 0.002]
-        )
+        runs = run_parameter_sweep(make_config(), "inductance", [0.0005, 0.001, 0.002])
 
         self.assertEqual(len(runs), 3)
         self.assertEqual(runs[0].result.time, runs[1].result.time)

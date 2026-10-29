@@ -21,7 +21,6 @@ from pycircuits_sim.analysis import (
     normalize_plant,
     nyquist_response,
     root_locus,
-    step_metrics,
 )
 from pycircuits_sim.design import (
     ackermann,
@@ -111,8 +110,17 @@ def _format_complex(values) -> str:
     return ", ".join(one(complex(value)) for value in values) or "(none)"
 
 
-def _build_model(example: str, use_example: bool, num_text: str, den_text: str,
-                 a_text: str, b_text: str, c_text: str, d_text: str, is_ss: bool):
+def _build_model(
+    example: str,
+    use_example: bool,
+    num_text: str,
+    den_text: str,
+    a_text: str,
+    b_text: str,
+    c_text: str,
+    d_text: str,
+    is_ss: bool,
+):
     if use_example:
         data = EXAMPLE_PLANTS[example]
         is_ss = data["format"] == "ss"
@@ -134,9 +142,7 @@ def _build_model(example: str, use_example: bool, num_text: str, den_text: str,
             ast.literal_eval(c_text),
             ast.literal_eval(d_text),
         )
-    return transfer_function_to_state_space(
-        ast.literal_eval(num_text), ast.literal_eval(den_text)
-    )
+    return transfer_function_to_state_space(ast.literal_eval(num_text), ast.literal_eval(den_text))
 
 
 def _parse_poles(text: str) -> list[complex]:
@@ -167,7 +173,9 @@ def _bode_figure(margins) -> go.Figure:
     )
     figure.add_hline(y=0.0, line_dash="dash", line_color="#383838", line_width=1, row=1, col=1)
     if margins.gain_crossover_rad_s is not None:
-        figure.add_vline(x=margins.gain_crossover_rad_s, line_dash="dot", line_color="#b07a16", row=1, col=1)
+        figure.add_vline(
+            x=margins.gain_crossover_rad_s, line_dash="dot", line_color="#b07a16", row=1, col=1
+        )
     figure.add_trace(
         go.Scatter(
             x=margins.frequencies_rad_s,
@@ -180,7 +188,9 @@ def _bode_figure(margins) -> go.Figure:
     )
     figure.add_hline(y=-180.0, line_dash="dash", line_color="#383838", line_width=1, row=2, col=1)
     if margins.phase_crossover_rad_s is not None:
-        figure.add_vline(x=margins.phase_crossover_rad_s, line_dash="dot", line_color="#b07a16", row=2, col=1)
+        figure.add_vline(
+            x=margins.phase_crossover_rad_s, line_dash="dot", line_color="#b07a16", row=2, col=1
+        )
     figure.update_xaxes(title_text="Frequency (rad/s)", type="log", row=2, col=1)
     figure.update_yaxes(title_text="Magnitude (dB)", row=1, col=1)
     figure.update_yaxes(title_text="Phase (deg)", row=2, col=1)
@@ -247,9 +257,7 @@ def _locus_figure(locus) -> go.Figure:
             )
         )
     figure.update_xaxes(title_text="Real part", zeroline=True)
-    figure.update_yaxes(
-        title_text="Imaginary part", zeroline=True, scaleanchor="x", scaleratio=1
-    )
+    figure.update_yaxes(title_text="Imaginary part", zeroline=True, scaleanchor="x", scaleratio=1)
     figure.update_layout(height=520, legend={"orientation": "h", "y": 1.08})
     return figure
 
@@ -268,7 +276,8 @@ def _render_analysis(model) -> None:
             st.metric("Finite zeros", len(report.zeros))
         if report.numerator is not None:
             st.markdown(
-                f"**Transfer function**: num = `{list(report.numerator)}` den = `{list(report.denominator)}`"
+                f"**Transfer function**: num = `{list(report.numerator)}` "
+                f"den = `{list(report.denominator)}`"
             )
         st.markdown(f"**Poles**: {_format_complex(report.poles)}")
         if report.zeros:
@@ -334,9 +343,7 @@ def _render_pid_tuning(model) -> None:
     if method == "Ziegler-Nichols":
         result = ziegler_nichols(model)
     else:
-        result = tune_pole_placement(
-            model, _parse_poles(st.session_state["control_tune_poles"])
-        )
+        result = tune_pole_placement(model, _parse_poles(st.session_state["control_tune_poles"]))
     columns = st.columns(3)
     columns[0].metric("Kp", f"{result.gains.kp:.6g}")
     columns[1].metric("Ki", f"{result.gains.ki:.6g}")
@@ -359,18 +366,12 @@ def _render_state_feedback(model) -> None:
     if method == "Ackermann":
         result = ackermann(model, _parse_poles(st.session_state["control_sf_poles"]))
     else:
-        q = [
-            float(value)
-            for value in st.session_state["control_sf_q"].split(",")
-            if value.strip()
-        ]
+        q = [float(value) for value in st.session_state["control_sf_q"].split(",") if value.strip()]
         result = lqr(model, q, float(st.session_state["control_sf_r"]))
     st.code("K = " + str([list(row) for row in result.closed_loop_k]))
     columns = st.columns(2)
     columns[0].metric("N-bar", "n/a" if result.nbar is None else f"{result.nbar:.6g}")
-    columns[1].metric(
-        "Controllability rank", f"{result.controllability_rank} / {result.order}"
-    )
+    columns[1].metric("Controllability rank", f"{result.controllability_rank} / {result.order}")
     st.markdown(f"**Closed-loop poles**: {_format_complex(result.closed_loop_poles)}")
     figure = go.Figure()
     scale = 1000.0 if result.closed_step.time_s[-1] < 1.0 else 1.0
@@ -393,9 +394,7 @@ def _render_state_feedback(model) -> None:
     )
     figure.update_xaxes(title_text=f"Time ({unit})")
     figure.update_yaxes(title_text="Step response")
-    figure.update_layout(
-        height=420, hovermode="x unified", legend={"orientation": "h", "y": 1.08}
-    )
+    figure.update_layout(height=420, hovermode="x unified", legend={"orientation": "h", "y": 1.08})
     st.plotly_chart(_style_chart(figure), use_container_width=True, theme=None)
     st.caption(result.message)
 
@@ -464,13 +463,9 @@ def render_control_analysis() -> None:
         c_text = data.get("C", "[[1.0]]")
         d_text = data.get("D", "[[0.0]]")
     else:
-        is_ss = st.sidebar.checkbox(
-            "State-space instead of transfer function", value=False
-        )
+        is_ss = st.sidebar.checkbox("State-space instead of transfer function", value=False)
         num_text = st.sidebar.text_input("Numerator, descending powers of s", "[1.0]")
-        den_text = st.sidebar.text_input(
-            "Denominator, descending powers of s", "[1.0, 1.0, 1.0]"
-        )
+        den_text = st.sidebar.text_input("Denominator, descending powers of s", "[1.0, 1.0, 1.0]")
         a_text = st.sidebar.text_area("A", "[[0.0, 1.0], [-1.0, -1.0]]", height=70)
         b_text = st.sidebar.text_area("B", "[[0.0], [1.0]]", height=60)
         c_text = st.sidebar.text_area("C", "[[1.0, 0.0]]", height=60)
@@ -541,7 +536,3 @@ def render_control_analysis() -> None:
             _render_analysis(st.session_state["control_model"])
         except ValueError as error:
             st.error(str(error))
-
-
-
-

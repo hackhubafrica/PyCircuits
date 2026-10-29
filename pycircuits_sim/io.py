@@ -8,6 +8,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+from .block_diagram import BlockDiagramDocument, BlockDiagramEdge, BlockDiagramNode
 from .buck import BuckConfig, SimulationResult
 from .closed_loop import ClosedLoopConfig, ClosedLoopResult, PIDConfig, ReferenceStep
 from .design import PIDGains
@@ -100,35 +101,7 @@ def load_interconnect_spec(path: str | Path) -> InterconnectSpec:
     for raw in raw_blocks:
         if not isinstance(raw, dict):
             raise ValueError("each block must be an object")
-        gains_data = raw.get("gains")
-        gains = (
-            PIDGains(
-                kp=float(gains_data["kp"]),
-                ki=float(gains_data["ki"]),
-                kd=float(gains_data["kd"]),
-            )
-            if isinstance(gains_data, dict)
-            else None
-        )
-        blocks.append(
-            InterconnectBlock(
-                id=str(raw.get("id", "")),
-                kind=str(raw.get("kind", "")),
-                num=tuple(float(v) for v in raw["num"]) if raw.get("num") is not None else None,
-                den=tuple(float(v) for v in raw["den"]) if raw.get("den") is not None else None,
-                A=_tuple_matrix(raw["A"]) if raw.get("A") is not None else None,
-                B=_tuple_matrix(raw["B"]) if raw.get("B") is not None else None,
-                C=_tuple_matrix(raw["C"]) if raw.get("C") is not None else None,
-                D=_tuple_matrix(raw["D"]) if raw.get("D") is not None else None,
-                gains=gains,
-                derivative_filter=(
-                    float(raw["derivative_filter"])
-                    if raw.get("derivative_filter") is not None
-                    else None
-                ),
-                k=float(raw["k"]) if raw.get("k") is not None else None,
-            )
-        )
+        blocks.append(_block_from_dict(raw))
     forward = data.get("forward")
     parallel = data.get("parallel")
     feedback = data.get("feedback", "unity")
@@ -146,9 +119,91 @@ def load_interconnect_spec(path: str | Path) -> InterconnectSpec:
         parallel=tuple(parallel) if parallel is not None else None,
         feedback=feedback,
         stop_time=float(data.get("stop_time", 10.0)),
-        time_step=(
-            float(data["time_step"]) if data.get("time_step") is not None else None
+        time_step=(float(data["time_step"]) if data.get("time_step") is not None else None),
+    )
+
+
+def _block_from_dict(raw: dict) -> InterconnectBlock:
+    """Build one engine block from a JSON object."""
+    gains_data = raw.get("gains")
+    gains = (
+        PIDGains(
+            kp=float(gains_data["kp"]),
+            ki=float(gains_data["ki"]),
+            kd=float(gains_data["kd"]),
+        )
+        if isinstance(gains_data, dict)
+        else None
+    )
+    return InterconnectBlock(
+        id=str(raw.get("id", "")),
+        kind=str(raw.get("kind", "")),
+        num=tuple(float(v) for v in raw["num"]) if raw.get("num") is not None else None,
+        den=tuple(float(v) for v in raw["den"]) if raw.get("den") is not None else None,
+        A=_tuple_matrix(raw["A"]) if raw.get("A") is not None else None,
+        B=_tuple_matrix(raw["B"]) if raw.get("B") is not None else None,
+        C=_tuple_matrix(raw["C"]) if raw.get("C") is not None else None,
+        D=_tuple_matrix(raw["D"]) if raw.get("D") is not None else None,
+        gains=gains,
+        derivative_filter=(
+            float(raw["derivative_filter"]) if raw.get("derivative_filter") is not None else None
         ),
+        k=float(raw["k"]) if raw.get("k") is not None else None,
+    )
+
+
+def load_block_diagram(path: str | Path) -> BlockDiagramDocument:
+    """Load a block-diagram canvas from a JSON file.
+
+    Expected shape: {"nodes": [{"id", "kind", ...block fields,
+    "position": [x, y]}], "edges": [{"id", "source", "target", "gain"}],
+    "input_node", "output_node", "stop_time", "time_step" (optional)}.
+    """
+    with Path(path).open(encoding="utf-8") as config_file:
+        data = json.load(config_file)
+    if not isinstance(data, dict):
+        raise ValueError("block-diagram JSON must contain an object")
+    raw_nodes = data.get("nodes")
+    raw_edges = data.get("edges")
+    if not isinstance(raw_nodes, list) or not raw_nodes:
+        raise ValueError("block-diagram config requires a nonempty nodes array")
+    if not isinstance(raw_edges, list):
+        raise ValueError("block-diagram config requires an edges array")
+    nodes: list[BlockDiagramNode] = []
+    for raw in raw_nodes:
+        if not isinstance(raw, dict):
+            raise ValueError("each node must be an object")
+        position = raw.get("position", [0.0, 0.0])
+        if not isinstance(position, (list, tuple)) or len(position) != 2:
+            raise ValueError("each node requires a two-element position")
+        nodes.append(
+            BlockDiagramNode(
+                id=str(raw.get("id", "")),
+                block=_block_from_dict(raw),
+                position=(float(position[0]), float(position[1])),
+                label=str(raw.get("label", "")),
+            )
+        )
+    edges: list[BlockDiagramEdge] = []
+    for index, raw in enumerate(raw_edges, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError("each edge must be an object")
+        edges.append(
+            BlockDiagramEdge(
+                id=str(raw.get("id", f"e{index}")),
+                source=str(raw.get("source", "")),
+                target=str(raw.get("target", "")),
+                gain=float(raw.get("gain", 1.0)),
+                label=str(raw.get("label", "")),
+            )
+        )
+    return BlockDiagramDocument(
+        nodes=tuple(nodes),
+        edges=tuple(edges),
+        input_node=str(data.get("input_node", "")),
+        output_node=str(data.get("output_node", "")),
+        stop_time=float(data.get("stop_time", 10.0)),
+        time_step=(float(data["time_step"]) if data.get("time_step") is not None else None),
     )
 
 
@@ -164,7 +219,12 @@ def write_state_feedback_csv(result: StateFeedbackResult, path: str | Path) -> N
         writer = csv.writer(csv_file)
         writer.writerow(["time_s", "open_output", "closed_output"])
         writer.writerows(
-            zip(result.open_step.time_s, result.open_step.output, result.closed_step.output)
+            zip(
+                result.open_step.time_s,
+                result.open_step.output,
+                result.closed_step.output,
+                strict=True,
+            )
         )
 
 
@@ -193,12 +253,16 @@ def read_waveforms_csv(path: str | Path) -> WaveformData:
                 current = float(row["inductor_current_a"])
                 voltage = float(row["output_voltage_v"])
             except (TypeError, ValueError):
-                raise ValueError(f"row {row_number}: time, current, and voltage must be numbers") from None
+                raise ValueError(
+                    f"row {row_number}: time, current, and voltage must be numbers"
+                ) from None
 
             if not all(math.isfinite(value) for value in (time, current, voltage)):
                 raise ValueError(f"row {row_number}: waveform values must be finite")
             if time < 0 or (times and time <= times[-1]):
-                raise ValueError(f"row {row_number}: time values must be nonnegative and increasing")
+                raise ValueError(
+                    f"row {row_number}: time values must be nonnegative and increasing"
+                )
 
             switch_value = (row["switch_on"] or "").strip().lower()
             if switch_value not in {"true", "false"}:
@@ -218,14 +282,13 @@ def write_csv(result: SimulationResult, path: str | Path) -> None:
     """Write time-domain waveforms to a portable CSV file."""
     with Path(path).open("w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
-        writer.writerow(
-            ["time_s", "inductor_current_a", "output_voltage_v", "switch_on"]
-        )
+        writer.writerow(["time_s", "inductor_current_a", "output_voltage_v", "switch_on"])
         for time, current, voltage, switch_on in zip(
             result.time,
             result.inductor_current,
             result.output_voltage,
             result.switch_on,
+            strict=True,
         ):
             writer.writerow([time, current, voltage, switch_on])
 
@@ -256,10 +319,9 @@ def write_sweep_csv(runs: list[SweepRun], path: str | Path) -> None:
                 run.result.inductor_current,
                 run.result.output_voltage,
                 run.result.switch_on,
+                strict=True,
             ):
-                writer.writerow(
-                    [run.parameter, run.value, time, current, voltage, switch_on]
-                )
+                writer.writerow([run.parameter, run.value, time, current, voltage, switch_on])
 
 
 def write_metrics_csv(metrics: list[RunMetrics], path: str | Path) -> None:
@@ -326,6 +388,7 @@ def write_closed_loop_csv(result: ClosedLoopResult, path: str | Path) -> None:
             result.duty_cycle,
             result.inductor_current,
             result.switch_on,
+            strict=True,
         ):
             writer.writerow(row)
 

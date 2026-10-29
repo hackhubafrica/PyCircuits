@@ -79,9 +79,7 @@ class ApiAnalysisTests(unittest.TestCase):
         self.assertIn("positive real part", body["bibo_reason"])
 
     def test_analyze_full_payload(self) -> None:
-        response = self.client.post(
-            "/api/analyze", json={"plant": KNOWN, "t_final": 12}
-        )
+        response = self.client.post("/api/analyze", json={"plant": KNOWN, "t_final": 12})
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body["stability"]["bibo_stable"])
@@ -185,17 +183,15 @@ class ApiDesignTests(unittest.TestCase):
         self.assertIn("phase_margin_deg", body["loop_bode"])
         # C=(0.2s^2+1.2s+0.4)/s on 1/(s^2+s+1), unity feedback:
         # T = (0.2s^2+1.2s+0.4) / (s^3+1.2s^2+2.2s+0.4).
-        for got, want in zip(body["closed_loop_num"], [0.2, 1.2, 0.4]):
+        for got, want in zip(body["closed_loop_num"], [0.2, 1.2, 0.4], strict=True):
             self.assertAlmostEqual(got, want, places=9)
-        for got, want in zip(body["closed_loop_den"], [1.0, 1.2, 2.2, 0.4]):
+        for got, want in zip(body["closed_loop_den"], [1.0, 1.2, 2.2, 0.4], strict=True):
             self.assertAlmostEqual(got, want, places=9)
         # Type-1 loop tracks its unit step reference.
         self.assertAlmostEqual(body["closed_loop_step"]["y"][-1], 1.0, delta=0.02)
 
     def test_zn_ultimate_on_third_order(self) -> None:
-        response = self.client.post(
-            "/api/pid/tune", json={"plant": THIRD, "method": "zn"}
-        )
+        response = self.client.post("/api/pid/tune", json={"plant": THIRD, "method": "zn"})
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["variant"], "ultimate")
@@ -206,9 +202,7 @@ class ApiDesignTests(unittest.TestCase):
         self.assertIn("PID", body["variants"])
 
     def test_zn_unusable_plant_is_readable_400(self) -> None:
-        response = self.client.post(
-            "/api/pid/tune", json={"plant": PENDULUM, "method": "zn"}
-        )
+        response = self.client.post("/api/pid/tune", json={"plant": PENDULUM, "method": "zn"})
         self.assertEqual(response.status_code, 400)
         detail = response.json()["detail"].lower()
         self.assertIn("phase-crossover", detail)
@@ -272,9 +266,7 @@ class ApiDesignTests(unittest.TestCase):
         self.assertIn("controllable", response.json()["detail"])
 
     def test_lqr_stabilizes_oscillator(self) -> None:
-        response = self.client.post(
-            "/api/sf/lqr", json={"plant": OSC, "Q": [1.0, 1.0], "R": 1.0}
-        )
+        response = self.client.post("/api/sf/lqr", json={"plant": OSC, "Q": [1.0, 1.0], "R": 1.0})
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["method"], "lqr")
@@ -312,9 +304,9 @@ class ApiInterconnectTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        for got, want in zip(body["composite"]["num"], [3.0, 4.0]):
+        for got, want in zip(body["composite"]["num"], [3.0, 4.0], strict=True):
             self.assertAlmostEqual(got, want, places=9)
-        for got, want in zip(body["composite"]["den"], [1.0, 3.0, 2.0]):
+        for got, want in zip(body["composite"]["den"], [1.0, 3.0, 2.0], strict=True):
             self.assertAlmostEqual(got, want, places=9)
         self.assertEqual(
             body["structure"],
@@ -342,9 +334,7 @@ class ApiInterconnectTests(unittest.TestCase):
         response = self.client.post(
             "/api/interconnect",
             json={
-                "blocks": [
-                    {"id": "a", "kind": "tf", "num": [1.0], "den": [1.0, 1.0]}
-                ],
+                "blocks": [{"id": "a", "kind": "tf", "num": [1.0], "den": [1.0, 1.0]}],
                 "forward": ["a", "nope"],
                 "feedback": "none",
             },
@@ -370,6 +360,3 @@ class ApiInterconnectTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

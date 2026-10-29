@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import plotly.graph_objects as go
@@ -18,9 +17,7 @@ from .schematic import (
     default_component,
     editor_from_document,
     schematic_document,
-    validate_editor_netlist,
 )
-
 
 KIND_LABELS = {
     "resistor": "Resistor",
@@ -76,6 +73,12 @@ def _node_content(node: dict[str, Any]) -> str:
     return "GND" if node["kind"] == "ground" else "Junction"
 
 
+def _wire_label(wires: list[dict[str, Any]], wire_id: str) -> str:
+    """Return a ``source → target`` label for the wire with ``wire_id``."""
+    wire = next(wire for wire in wires if wire["id"] == wire_id)
+    return f"{wire['source']} → {wire['target']}"
+
+
 def _make_canvas_state(
     nodes: list[dict[str, Any]],
     wires: list[dict[str, Any]],
@@ -120,7 +123,11 @@ def _edit_component(component: dict[str, Any], key: str) -> dict[str, Any]:
     edited["name"] = st.text_input("Reference", component.get("name", "X1"), key=f"{key}_name")
     if kind in {"resistor", "capacitor", "inductor"}:
         edited["value"] = st.number_input(
-            {"resistor": "Resistance (ohm)", "capacitor": "Capacitance (F)", "inductor": "Inductance (H)"}[kind],
+            {
+                "resistor": "Resistance (ohm)",
+                "capacitor": "Capacitance (F)",
+                "inductor": "Inductance (H)",
+            }[kind],
             min_value=1e-12,
             value=float(component.get("value", 1.0)),
             format="%.8g",
@@ -134,27 +141,91 @@ def _edit_component(component: dict[str, Any], key: str) -> dict[str, Any]:
                 key=f"{key}_initial",
             )
     elif kind == "diode":
-        edited["saturation_current"] = st.number_input("Saturation current (A)", min_value=1e-18, value=float(component.get("saturation_current", 1e-12)), format="%.3e", key=f"{key}_is")
-        edited["ideality_factor"] = st.number_input("Ideality factor", min_value=0.1, value=float(component.get("ideality_factor", 1.0)), step=0.1, key=f"{key}_n")
-        edited["thermal_voltage"] = st.number_input("Thermal voltage (V)", min_value=1e-4, value=float(component.get("thermal_voltage", 0.02585)), format="%.5g", key=f"{key}_vt")
+        edited["saturation_current"] = st.number_input(
+            "Saturation current (A)",
+            min_value=1e-18,
+            value=float(component.get("saturation_current", 1e-12)),
+            format="%.3e",
+            key=f"{key}_is",
+        )
+        edited["ideality_factor"] = st.number_input(
+            "Ideality factor",
+            min_value=0.1,
+            value=float(component.get("ideality_factor", 1.0)),
+            step=0.1,
+            key=f"{key}_n",
+        )
+        edited["thermal_voltage"] = st.number_input(
+            "Thermal voltage (V)",
+            min_value=1e-4,
+            value=float(component.get("thermal_voltage", 0.02585)),
+            format="%.5g",
+            key=f"{key}_vt",
+        )
     elif kind in {"voltage_source", "current_source"}:
-        edited["value"] = st.number_input("DC value (V)" if kind == "voltage_source" else "DC value (A)", value=float(component.get("value", 0.0)), format="%.8g", key=f"{key}_value")
+        edited["value"] = st.number_input(
+            "DC value (V)" if kind == "voltage_source" else "DC value (A)",
+            value=float(component.get("value", 0.0)),
+            format="%.8g",
+            key=f"{key}_value",
+        )
         waveform = dict(component.get("waveform", {}))
-        waveform_type = st.selectbox("Waveform", ["dc", "sine"], index=0 if waveform.get("type", "dc") == "dc" else 1, key=f"{key}_waveform")
+        waveform_type = st.selectbox(
+            "Waveform",
+            ["dc", "sine"],
+            index=0 if waveform.get("type", "dc") == "dc" else 1,
+            key=f"{key}_waveform",
+        )
         if waveform_type == "sine":
             waveform["type"] = "sine"
-            waveform["offset"] = st.number_input("Offset", value=float(waveform.get("offset", component.get("value", 0.0))), key=f"{key}_offset")
-            waveform["amplitude"] = st.number_input("Amplitude", min_value=0.0, value=float(waveform.get("amplitude", 1.0)), key=f"{key}_amplitude")
-            waveform["frequency"] = st.number_input("Frequency (Hz)", min_value=0.001, value=float(waveform.get("frequency", 50.0)), key=f"{key}_frequency")
-            waveform["phase"] = st.number_input("Phase (rad)", value=float(waveform.get("phase", 0.0)), key=f"{key}_phase")
+            waveform["offset"] = st.number_input(
+                "Offset",
+                value=float(waveform.get("offset", component.get("value", 0.0))),
+                key=f"{key}_offset",
+            )
+            waveform["amplitude"] = st.number_input(
+                "Amplitude",
+                min_value=0.0,
+                value=float(waveform.get("amplitude", 1.0)),
+                key=f"{key}_amplitude",
+            )
+            waveform["frequency"] = st.number_input(
+                "Frequency (Hz)",
+                min_value=0.001,
+                value=float(waveform.get("frequency", 50.0)),
+                key=f"{key}_frequency",
+            )
+            waveform["phase"] = st.number_input(
+                "Phase (rad)", value=float(waveform.get("phase", 0.0)), key=f"{key}_phase"
+            )
         else:
             waveform = {"type": "dc", "offset": float(edited["value"])}
         edited["waveform"] = waveform
     elif kind == "switch":
-        edited["ron"] = st.number_input("On resistance (ohm)", min_value=1e-9, value=float(component.get("ron", 1e-3)), format="%.5g", key=f"{key}_ron")
-        edited["roff"] = st.number_input("Off resistance (ohm)", min_value=1e-3, value=float(component.get("roff", 1e6)), format="%.5g", key=f"{key}_roff")
-        edited["threshold"] = st.number_input("Control threshold", value=float(component.get("threshold", 0.5)), key=f"{key}_threshold")
-        points = st.text_area("PWL control points [[time_s, value], ...]", json.dumps(component.get("control_points", [[0.0, 0.0], [0.001, 1.0]])), key=f"{key}_points")
+        edited["ron"] = st.number_input(
+            "On resistance (ohm)",
+            min_value=1e-9,
+            value=float(component.get("ron", 1e-3)),
+            format="%.5g",
+            key=f"{key}_ron",
+        )
+        edited["roff"] = st.number_input(
+            "Off resistance (ohm)",
+            min_value=1e-3,
+            value=float(component.get("roff", 1e6)),
+            format="%.5g",
+            key=f"{key}_roff",
+        )
+        edited["threshold"] = st.number_input(
+            "Control threshold",
+            value=float(component.get("threshold", 0.5)),
+            key=f"{key}_threshold",
+        )
+        points = st.text_area(
+            "PWL control points [[time_s, value], ...]",
+            json.dumps(component.get("control_points", [[0.0, 0.0], [0.001, 1.0]])),
+            key=f"{key}_points",
+        )
         try:
             edited["control_points"] = json.loads(points)
         except json.JSONDecodeError as error:
@@ -164,9 +235,15 @@ def _edit_component(component: dict[str, Any], key: str) -> dict[str, Any]:
 
 def render_schematic_editor() -> None:
     """Render palette, canvas, property inspector, validation, and MNA outputs."""
-    st.markdown("<div class='workbench-kicker'>MNA / Schematic editor</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='workbench-kicker'>MNA / Schematic editor</div>", unsafe_allow_html=True
+    )
     st.markdown("<div class='workbench-title'>Circuit canvas</div>", unsafe_allow_html=True)
-    st.markdown("<div class='workbench-subtitle'>Place two-terminal parts, connect their terminals, validate the netlist, then simulate it.</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='workbench-subtitle'>Place two-terminal parts, connect their "
+        "terminals, validate the netlist, then simulate it.</div>",
+        unsafe_allow_html=True,
+    )
 
     st.session_state.setdefault("schematic_nodes", [])
     st.session_state.setdefault("schematic_wires", [])
@@ -199,30 +276,81 @@ def render_schematic_editor() -> None:
         palette_kind = st.selectbox("Add component", [*COMPONENT_KINDS, "junction", "ground"])
         if st.button("Add to canvas", type="primary", use_container_width=True):
             nodes = st.session_state["schematic_nodes"]
-            identifier = _next_node_id(nodes, "GND" if palette_kind == "ground" else "J" if palette_kind == "junction" else "X")
+            identifier = _next_node_id(
+                nodes,
+                "GND" if palette_kind == "ground" else "J" if palette_kind == "junction" else "X",
+            )
             component = None
             if palette_kind in COMPONENT_KINDS:
-                name_prefix = {"resistor": "R", "capacitor": "C", "inductor": "L", "diode": "D", "voltage_source": "V", "current_source": "I", "switch": "S"}[palette_kind]
+                name_prefix = {
+                    "resistor": "R",
+                    "capacitor": "C",
+                    "inductor": "L",
+                    "diode": "D",
+                    "voltage_source": "V",
+                    "current_source": "I",
+                    "switch": "S",
+                }[palette_kind]
                 count = sum(node.get("kind") == palette_kind for node in nodes) + 1
                 component = default_component(palette_kind, f"{name_prefix}{count}")
-            nodes.append({"id": identifier, "kind": palette_kind, "component": component, "position": [100 + (len(nodes) % 4) * 190, 100 + (len(nodes) // 4) * 120]})
+            nodes.append(
+                {
+                    "id": identifier,
+                    "kind": palette_kind,
+                    "component": component,
+                    "position": [100 + (len(nodes) % 4) * 190, 100 + (len(nodes) // 4) * 120],
+                }
+            )
             st.session_state["schematic_selected_id"] = identifier
             st.session_state["schematic_result"] = None
 
         st.subheader("Transient solver")
         previous_time_step = st.session_state["schematic_time_step"]
         previous_stop_time = st.session_state["schematic_stop_time"]
-        st.session_state["schematic_time_step"] = st.number_input("Timestep (s)", min_value=1e-9, value=float(st.session_state["schematic_time_step"]), format="%.8g", key="schematic_dt")
-        st.session_state["schematic_stop_time"] = st.number_input("Stop time (s)", min_value=1e-8, value=float(st.session_state["schematic_stop_time"]), format="%.8g", key="schematic_tstop")
-        if (previous_time_step, previous_stop_time) != (st.session_state["schematic_time_step"], st.session_state["schematic_stop_time"]):
+        st.session_state["schematic_time_step"] = st.number_input(
+            "Timestep (s)",
+            min_value=1e-9,
+            value=float(st.session_state["schematic_time_step"]),
+            format="%.8g",
+            key="schematic_dt",
+        )
+        st.session_state["schematic_stop_time"] = st.number_input(
+            "Stop time (s)",
+            min_value=1e-8,
+            value=float(st.session_state["schematic_stop_time"]),
+            format="%.8g",
+            key="schematic_tstop",
+        )
+        if (previous_time_step, previous_stop_time) != (
+            st.session_state["schematic_time_step"],
+            st.session_state["schematic_stop_time"],
+        ):
             st.session_state["schematic_result"] = None
-        st.caption("Port convention: left = p, right = n. Use junctions to branch a net and always place a ground.")
+        st.caption(
+            "Port convention: left = p, right = n. Use junctions to branch a net "
+            "and always place a ground."
+        )
 
         if st.button("Load RC starter", use_container_width=True):
             starter_nodes = [
-                {"id": "V1", "kind": "voltage_source", "component": {"name": "V1", "type": "voltage_source", "value": 5.0}, "position": [100, 180]},
-                {"id": "R1", "kind": "resistor", "component": {"name": "R1", "type": "resistor", "value": 1000.0}, "position": [360, 180]},
-                {"id": "C1", "kind": "capacitor", "component": {"name": "C1", "type": "capacitor", "value": 1e-6}, "position": [620, 180]},
+                {
+                    "id": "V1",
+                    "kind": "voltage_source",
+                    "component": {"name": "V1", "type": "voltage_source", "value": 5.0},
+                    "position": [100, 180],
+                },
+                {
+                    "id": "R1",
+                    "kind": "resistor",
+                    "component": {"name": "R1", "type": "resistor", "value": 1000.0},
+                    "position": [360, 180],
+                },
+                {
+                    "id": "C1",
+                    "kind": "capacitor",
+                    "component": {"name": "C1", "type": "capacitor", "value": 1e-6},
+                    "position": [620, 180],
+                },
                 {"id": "J1", "kind": "junction", "component": None, "position": [250, 50]},
                 {"id": "GND", "kind": "ground", "component": None, "position": [620, 350]},
             ]
@@ -301,11 +429,21 @@ def render_schematic_editor() -> None:
         st.markdown("#### Properties")
         component_nodes = [node for node in nodes if node["kind"] in COMPONENT_KINDS]
         if component_nodes:
-            id_to_label = {node["id"]: f"{node['component'].get('name', node['id'])} · {KIND_LABELS[node['kind']]}" for node in component_nodes}
+            id_to_label = {
+                node[
+                    "id"
+                ]: f"{node['component'].get('name', node['id'])} · {KIND_LABELS[node['kind']]}"
+                for node in component_nodes
+            }
             choices = list(id_to_label)
             selected = st.session_state.get("schematic_selected_id")
             default_index = choices.index(selected) if selected in choices else 0
-            selected = st.selectbox("Selected component", choices, index=default_index, format_func=lambda item: id_to_label[item])
+            selected = st.selectbox(
+                "Selected component",
+                choices,
+                index=default_index,
+                format_func=lambda item: id_to_label[item],
+            )
             st.session_state["schematic_selected_id"] = selected
             selected_node = next(node for node in component_nodes if node["id"] == selected)
             original_component = dict(selected_node["component"])
@@ -315,8 +453,14 @@ def render_schematic_editor() -> None:
             if updated_component != original_component:
                 st.session_state["schematic_result"] = None
             if st.button("Remove selected component", use_container_width=True):
-                st.session_state["schematic_nodes"] = [node for node in nodes if node["id"] != selected]
-                st.session_state["schematic_wires"] = [wire for wire in wires if wire["source"] != selected and wire["target"] != selected]
+                st.session_state["schematic_nodes"] = [
+                    node for node in nodes if node["id"] != selected
+                ]
+                st.session_state["schematic_wires"] = [
+                    wire
+                    for wire in wires
+                    if wire["source"] != selected and wire["target"] != selected
+                ]
                 st.session_state["schematic_selected_id"] = None
                 st.session_state["schematic_result"] = None
         else:
@@ -324,15 +468,34 @@ def render_schematic_editor() -> None:
 
         if wires:
             wire_ids = [wire["id"] for wire in wires]
-            remove_wire = st.selectbox("Wire", wire_ids, format_func=lambda wire_id: f"{next(w['source'] for w in wires if w['id'] == wire_id)} → {next(w['target'] for w in wires if w['id'] == wire_id)}")
+            remove_wire = st.selectbox(
+                "Wire",
+                wire_ids,
+                format_func=lambda wire_id: _wire_label(wires, wire_id),
+            )
             if st.button("Remove selected wire", use_container_width=True):
-                st.session_state["schematic_wires"] = [wire for wire in wires if wire["id"] != remove_wire]
+                st.session_state["schematic_wires"] = [
+                    wire for wire in wires if wire["id"] != remove_wire
+                ]
                 st.session_state["schematic_result"] = None
 
         try:
-            document = schematic_document(nodes, wires, st.session_state["schematic_time_step"], st.session_state["schematic_stop_time"])
-            st.success(f"Netlist valid · {len(document['components'])} components · {len(wires)} wires")
-            st.download_button("Save netlist JSON", json.dumps(document, indent=2), file_name="pycircuits_schematic.json", mime="application/json", use_container_width=True)
+            document = schematic_document(
+                nodes,
+                wires,
+                st.session_state["schematic_time_step"],
+                st.session_state["schematic_stop_time"],
+            )
+            st.success(
+                f"Netlist valid · {len(document['components'])} components · {len(wires)} wires"
+            )
+            st.download_button(
+                "Save netlist JSON",
+                json.dumps(document, indent=2),
+                file_name="pycircuits_schematic.json",
+                mime="application/json",
+                use_container_width=True,
+            )
             if st.button("Run circuit simulation", type="primary", use_container_width=True):
                 config = MNAConfig(
                     time_step=st.session_state["schematic_time_step"],
@@ -343,7 +506,9 @@ def render_schematic_editor() -> None:
                 st.session_state["schematic_error"] = None
         except Exception as error:
             st.warning(f"Netlist needs attention: {error}")
-            if st.button("Run circuit simulation", type="primary", use_container_width=True, disabled=True):
+            if st.button(
+                "Run circuit simulation", type="primary", use_container_width=True, disabled=True
+            ):
                 pass
 
     result = st.session_state.get("schematic_result")
@@ -353,14 +518,26 @@ def render_schematic_editor() -> None:
         voltage_fig = go.Figure()
         for node_name, trace in result.node_voltages.items():
             voltage_fig.add_trace(go.Scatter(x=result.time, y=trace, name=f"V({node_name})"))
-        voltage_fig.update_layout(title="Node voltages", xaxis_title="Time (s)", yaxis_title="Voltage (V)", height=360)
+        voltage_fig.update_layout(
+            title="Node voltages", xaxis_title="Time (s)", yaxis_title="Voltage (V)", height=360
+        )
         current_fig = go.Figure()
         for component_name, trace in result.component_currents.items():
             current_fig.add_trace(go.Scatter(x=result.time, y=trace, name=component_name))
-        current_fig.update_layout(title="Component currents", xaxis_title="Time (s)", yaxis_title="Current (A)", height=360)
+        current_fig.update_layout(
+            title="Component currents",
+            xaxis_title="Time (s)",
+            yaxis_title="Current (A)",
+            height=360,
+        )
         voltage_col.plotly_chart(voltage_fig, use_container_width=True)
         current_col.plotly_chart(current_fig, use_container_width=True)
-        st.download_button("Download simulation CSV", _result_csv(result), file_name="schematic_waveforms.csv", mime="text/csv")
+        st.download_button(
+            "Download simulation CSV",
+            _result_csv(result),
+            file_name="schematic_waveforms.csv",
+            mime="text/csv",
+        )
 
 
 def _result_csv(result: Any) -> str:
@@ -369,8 +546,18 @@ def _result_csv(result: Any) -> str:
 
     output = StringIO()
     writer = csv.writer(output)
-    columns = ["time_s", *[f"node_voltage_{name}_v" for name in result.node_voltages], *[f"current_{name}_a" for name in result.component_currents]]
+    columns = [
+        "time_s",
+        *[f"node_voltage_{name}_v" for name in result.node_voltages],
+        *[f"current_{name}_a" for name in result.component_currents],
+    ]
     writer.writerow(columns)
     for index, time in enumerate(result.time):
-        writer.writerow([time, *[trace[index] for trace in result.node_voltages.values()], *[trace[index] for trace in result.component_currents.values()]])
+        writer.writerow(
+            [
+                time,
+                *[trace[index] for trace in result.node_voltages.values()],
+                *[trace[index] for trace in result.component_currents.values()],
+            ]
+        )
     return output.getvalue()

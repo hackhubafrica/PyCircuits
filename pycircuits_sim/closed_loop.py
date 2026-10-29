@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
-from .buck import BuckConfig, BuckPlant, SimulationResult, _step_count
+from .buck import BuckConfig, BuckPlant, _step_count
 from .ir import IrMixin
 
 
@@ -113,9 +113,7 @@ def simulate_closed_loop(config: ClosedLoopConfig) -> ClosedLoopResult:
             controller.ki * control_error * controller.sample_time
         )
         unconstrained = p_term + candidate_integral + d_term
-        if not (
-            unconstrained > controller.duty_max and control_error > 0
-        ) and not (
+        if not (unconstrained > controller.duty_max and control_error > 0) and not (
             unconstrained < controller.duty_min and control_error < 0
         ):
             prior_integral = candidate_integral

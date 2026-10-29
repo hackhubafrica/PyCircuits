@@ -1,20 +1,20 @@
+import math
 import unittest
 from pathlib import Path
-import math
 
 from pycircuits_sim.linear_systems import (
-    LinearPIDConfig,
     DiscreteStateSpaceModel,
-    discrete_frequency_response,
-    simulate_discrete_state_space,
-    simulate_discrete_state_space_pid,
-    logarithmic_frequency_grid,
+    LinearPIDConfig,
     StateSpaceModel,
     StepReference,
-    simulate_state_space,
-    simulate_state_space_pid,
+    discrete_frequency_response,
     frequency_response,
     load_linear_plant,
+    logarithmic_frequency_grid,
+    simulate_discrete_state_space,
+    simulate_discrete_state_space_pid,
+    simulate_state_space,
+    simulate_state_space_pid,
     transfer_function_to_state_space,
 )
 
@@ -43,7 +43,10 @@ class LinearPlantTests(unittest.TestCase):
         response = discrete_frequency_response(model, [0.0 + 0.1])
 
         self.assertEqual(response.poles, [complex(0.5, 0.0)])
-        self.assertAlmostEqual(abs(response.response[0][0][0]), 1.0 / abs(complex(math.cos(2 * math.pi * 0.01) - 0.5, math.sin(2 * math.pi * 0.01))))
+        self.assertAlmostEqual(
+            abs(response.response[0][0][0]),
+            1.0 / abs(complex(math.cos(2 * math.pi * 0.01) - 0.5, math.sin(2 * math.pi * 0.01))),
+        )
         with self.assertRaisesRegex(ValueError, "Nyquist"):
             discrete_frequency_response(model, [5.0])
 
@@ -87,9 +90,9 @@ class LinearPlantTests(unittest.TestCase):
         self.assertAlmostEqual(bode.magnitude_db[0][0][0], 20.0 * math.log10(1.25), places=5)
         self.assertAlmostEqual(bode.phase_deg[0][0][0], -90.0, places=5)
         self.assertAlmostEqual(bode.poles[0].real, -2.0)
-        self.assertAlmostEqual(abs(bode.poles[0].imag), 21.0 ** 0.5)
+        self.assertAlmostEqual(abs(bode.poles[0].imag), 21.0**0.5)
         self.assertAlmostEqual(bode.poles[1].real, -2.0)
-        self.assertAlmostEqual(abs(bode.poles[1].imag), 21.0 ** 0.5)
+        self.assertAlmostEqual(abs(bode.poles[1].imag), 21.0**0.5)
 
     def test_mimo_frequency_response_has_output_input_channels(self) -> None:
         model = StateSpaceModel.from_matrices(
@@ -108,11 +111,9 @@ class LinearPlantTests(unittest.TestCase):
         grid = logarithmic_frequency_grid(1.0, 100.0, points_per_decade=10)
         self.assertAlmostEqual(grid[0], 1.0)
         self.assertAlmostEqual(grid[-1], 100.0)
-        self.assertTrue(all(left < right for left, right in zip(grid, grid[1:])))
+        self.assertTrue(all(left < right for left, right in zip(grid, grid[1:], strict=False)))
         with self.assertRaisesRegex(ValueError, "greater than zero"):
-            frequency_response(
-                transfer_function_to_state_space([1.0], [1.0, 1.0]), [0.0]
-            )
+            frequency_response(transfer_function_to_state_space([1.0], [1.0, 1.0]), [0.0])
 
     def test_first_order_transfer_function_backward_euler_step(self) -> None:
         model = transfer_function_to_state_space([1.0], [1.0, 1.0])
@@ -187,9 +188,7 @@ class LinearPlantTests(unittest.TestCase):
         self.assertEqual(len(result.reference), len(result.time))
 
     def test_pid_rejects_mimo_model(self) -> None:
-        model = StateSpaceModel.from_matrices(
-            [[-1.0]], [[1.0, 1.0]], [[1.0]], [[0.0, 0.0]]
-        )
+        model = StateSpaceModel.from_matrices([[-1.0]], [[1.0, 1.0]], [[1.0]], [[0.0, 0.0]])
         with self.assertRaisesRegex(ValueError, "SISO"):
             simulate_state_space_pid(
                 model,

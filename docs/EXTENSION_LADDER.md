@@ -165,6 +165,16 @@ risk is in the optional toolchain, not the core.
 
 ---
 
+Stage 0  hygiene + doc corrections          
+Stage 1  ir.py — shared interchange format  
+Stage 2  graph interconnect + block editor  
+Stage 4  pycircuits-hil hardware bridge     
+Stage 3  signal processing / system ID      
+Stage 5  Modelica frontend via Rumoca       
+Stage 6  JAX / CasADi / Rust backends       
+Stage 7  LSP + Jupyter kernels             
+
+
 *See also: [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md),
 [UNIFIED_ARCHITECTURE.md](UNIFIED_ARCHITECTURE.md),
 [PORTING_MAP.md](PORTING_MAP.md),

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from .buck import _step_count
 from .ir import IrMixin
-
 
 GROUND_NODES = {"0", "gnd", "ground"}
 PASSIVE_TYPES = {"resistor", "capacitor", "inductor", "diode"}
@@ -92,12 +91,8 @@ class Component(IrMixin):
                 raise ValueError(f"{name}: waveform type must be dc or sine")
             value = _finite_number(data.get("value", 0.0), f"{name}.value")
             offset = _finite_number(waveform_data.get("offset", value), f"{name}.offset")
-            amplitude = _finite_number(
-                waveform_data.get("amplitude", 0.0), f"{name}.amplitude"
-            )
-            frequency = _finite_number(
-                waveform_data.get("frequency", 0.0), f"{name}.frequency"
-            )
+            amplitude = _finite_number(waveform_data.get("amplitude", 0.0), f"{name}.amplitude")
+            frequency = _finite_number(waveform_data.get("frequency", 0.0), f"{name}.frequency")
             phase = _finite_number(waveform_data.get("phase", 0.0), f"{name}.phase")
             if waveform == "sine" and frequency <= 0:
                 raise ValueError(f"{name}.frequency must be positive for a sine source")
@@ -208,13 +203,9 @@ def load_mna_config(data: dict[str, Any]) -> MNAConfig:
         stop_time=_finite_number(data.get("stop_time"), "stop_time"),
         components=components,
         max_steps=int(data.get("max_steps", 2_000_000)),
-        newton_tolerance=_finite_number(
-            data.get("newton_tolerance", 1e-9), "newton_tolerance"
-        ),
+        newton_tolerance=_finite_number(data.get("newton_tolerance", 1e-9), "newton_tolerance"),
         newton_max_iterations=int(data.get("newton_max_iterations", 80)),
-        newton_damping=_finite_number(
-            data.get("newton_damping", 0.5), "newton_damping"
-        ),
+        newton_damping=_finite_number(data.get("newton_damping", 0.5), "newton_damping"),
         gmin=_finite_number(data.get("gmin", 1e-12), "gmin"),
     )
     node_names = {
@@ -234,6 +225,15 @@ def _node_voltage(solution: np.ndarray, node: str, node_index: dict[str, int]) -
     return float(solution[node_index[node]])
 
 
+def _diode_drop(
+    solution: np.ndarray, diode: Component, node_index: dict[str, int]
+) -> float:
+    """Return the anode-to-cathode voltage across ``diode``."""
+    return _node_voltage(solution, diode.p, node_index) - _node_voltage(
+        solution, diode.n, node_index
+    )
+
+
 def _source_value(component: Component, time: float) -> float:
     if component.waveform == "dc":
         return component.offset
@@ -248,7 +248,7 @@ def _control_value(component: Component, time: float) -> float:
         return points[0][1]
     if time >= points[-1][0]:
         return points[-1][1]
-    for (left_time, left_value), (right_time, right_value) in zip(points, points[1:]):
+    for (left_time, left_value), (right_time, right_value) in zip(points, points[1:], strict=False):
         if left_time <= time <= right_time:
             fraction = (time - left_time) / (right_time - left_time)
             return left_value + fraction * (right_value - left_value)
@@ -277,8 +277,7 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
         if component.kind in {"voltage_source", "inductor"}
     ]
     branch_index = {
-        component.name: len(node_names) + index
-        for index, component in enumerate(branch_components)
+        component.name: len(node_names) + index for index, component in enumerate(branch_components)
     }
     system_size = len(node_names) + len(branch_components)
     step_count = _step_count(config.stop_time, config.time_step)
@@ -287,9 +286,7 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
     node_traces = {node: [0.0] for node in node_names}
     current_traces = {component.name: [0.0] for component in config.components}
     switch_traces = {
-        component.name: [
-            _control_value(component, 0.0) >= component.threshold
-        ]
+        component.name: [_control_value(component, 0.0) >= component.threshold]
         for component in config.components
         if component.kind == "switch"
     }
@@ -315,28 +312,38 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
         for node in node_names:
             base_matrix[node_index[node], node_index[node]] += config.gmin
 
-        def stamp_conductance(p: str, n: str, conductance: float) -> None:
+        def stamp_conductance(
+            p: str,
+            n: str,
+            conductance: float,
+            matrix: np.ndarray = base_matrix,
+        ) -> None:
             if p.lower() not in GROUND_NODES:
                 pi = node_index[p]
-                base_matrix[pi, pi] += conductance
+                matrix[pi, pi] += conductance
             if n.lower() not in GROUND_NODES:
                 ni = node_index[n]
-                base_matrix[ni, ni] += conductance
+                matrix[ni, ni] += conductance
             if p.lower() not in GROUND_NODES and n.lower() not in GROUND_NODES:
                 pi = node_index[p]
                 ni = node_index[n]
-                base_matrix[pi, ni] -= conductance
-                base_matrix[ni, pi] -= conductance
+                matrix[pi, ni] -= conductance
+                matrix[ni, pi] -= conductance
 
-        def stamp_branch(p: str, n: str, branch: int) -> None:
+        def stamp_branch(
+            p: str,
+            n: str,
+            branch: int,
+            matrix: np.ndarray = base_matrix,
+        ) -> None:
             if p.lower() not in GROUND_NODES:
                 pi = node_index[p]
-                base_matrix[pi, branch] += 1.0
-                base_matrix[branch, pi] += 1.0
+                matrix[pi, branch] += 1.0
+                matrix[branch, pi] += 1.0
             if n.lower() not in GROUND_NODES:
                 ni = node_index[n]
-                base_matrix[ni, branch] -= 1.0
-                base_matrix[branch, ni] -= 1.0
+                matrix[ni, branch] -= 1.0
+                matrix[branch, ni] -= 1.0
 
         for component in config.components:
             if component.kind == "resistor":
@@ -375,21 +382,17 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
         solution_guess = previous_solution.copy()
         converged = not diodes
         final_residual_norm = 0.0
-        for iteration in range(config.newton_max_iterations if diodes else 1):
+        for _iteration in range(config.newton_max_iterations if diodes else 1):
             residual = base_matrix @ solution_guess - base_rhs
             jacobian = base_matrix.copy()
             for diode in diodes:
-                diode_voltage = _node_voltage(solution_guess, diode.p, node_index) - _node_voltage(
-                    solution_guess, diode.n, node_index
-                )
+                diode_voltage = _diode_drop(solution_guess, diode, node_index)
                 voltage_scale = diode.ideality_factor * diode.thermal_voltage
                 exponent = max(-40.0, min(40.0, diode_voltage / voltage_scale))
                 exponential = math.exp(exponent)
                 diode_current = diode.saturation_current * (exponential - 1.0)
                 conductance = diode.saturation_current * exponential / voltage_scale
-                stamp_diode_conductance(
-                    jacobian, diode.p, diode.n, conductance, node_index
-                )
+                stamp_diode_conductance(jacobian, diode.p, diode.n, conductance, node_index)
                 if diode.p.lower() not in GROUND_NODES:
                     residual[node_index[diode.p]] += diode_current
                 if diode.n.lower() not in GROUND_NODES:
@@ -453,7 +456,7 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
 
         if not converged:
             diode_voltages = ", ".join(
-                f"{diode.name}={_node_voltage(solution_guess, diode.p, node_index) - _node_voltage(solution_guess, diode.n, node_index):.5g}V"
+                f"{diode.name}={_diode_drop(solution_guess, diode, node_index):.5g}V"
                 for diode in diodes
             )
             raise ValueError(
@@ -478,8 +481,8 @@ def simulate_mna(config: MNAConfig) -> CircuitResult:
             if component.kind == "resistor":
                 current = voltage_drop / component.value
             elif component.kind == "capacitor":
-                current = component.value / step_size * (
-                    voltage_drop - capacitor_history[component.name]
+                current = (
+                    component.value / step_size * (voltage_drop - capacitor_history[component.name])
                 )
                 capacitor_history[component.name] = voltage_drop
             elif component.kind == "inductor":

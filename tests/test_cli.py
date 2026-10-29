@@ -5,8 +5,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
 from pycircuits_sim.cli import _parse_complex_list, _parse_float_list
 from pycircuits_sim.design import PIDGains, StateFeedbackResult
 from pycircuits_sim.design.state_feedback import StepTrace
@@ -14,6 +12,8 @@ from pycircuits_sim.io import (
     load_interconnect_spec,
     write_state_feedback_csv,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class ParserTests(unittest.TestCase):
@@ -38,9 +38,7 @@ class InterconnectSpecLoaderTests(unittest.TestCase):
     def test_example_file_loads_and_composes(self) -> None:
         from pycircuits_sim.interconnect import interconnect
 
-        spec = load_interconnect_spec(
-            PROJECT_ROOT / "examples" / "interconnect_pid_loop.json"
-        )
+        spec = load_interconnect_spec(PROJECT_ROOT / "examples" / "interconnect_pid_loop.json")
         self.assertEqual(len(spec.blocks), 2)
         self.assertEqual(spec.forward, ("c", "g"))
         self.assertEqual(spec.feedback, "unity")
@@ -98,9 +96,7 @@ class CliEndToEndTests(unittest.TestCase):
         )
 
     def test_analyze_reports_stability(self) -> None:
-        completed = self._run(
-            "analyze", "examples/analysis_third_order.json", "--no-step"
-        )
+        completed = self._run("analyze", "examples/analysis_third_order.json", "--no-step")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("BIBO stable: True", completed.stdout)
         self.assertIn("Poles: -3, -2, -1", completed.stdout)

@@ -25,12 +25,12 @@ from .analysis.root_locus import root_locus as compute_root_locus
 from .analysis.stability import StabilityReport, analyze_stability
 from .design.state_feedback import StepTrace
 from .design.tuning import PIDGains, pid_transfer_function
+from .ir import IrMixin
 from .linear_systems import (
     StateSpaceModel,
     simulate_state_space,
     transfer_function_to_state_space,
 )
-from .ir import IrMixin
 
 MAX_BLOCKS = 6
 MAX_ORDER = 20
@@ -168,45 +168,31 @@ def _block_rational(block: InterconnectBlock) -> Rational:
     """Convert a validated block to normalized (num, den) coefficients."""
     if block.kind == "tf":
         if block.num is None or block.den is None:
-            raise ValueError(
-                f"block '{block.id}': transfer-function block needs num and den"
-            )
+            raise ValueError(f"block '{block.id}': transfer-function block needs num and den")
         num = np.asarray(block.num, dtype=float)
         den = np.asarray(block.den, dtype=float)
         if num.ndim != 1 or den.ndim != 1 or num.size == 0 or den.size == 0:
-            raise ValueError(
-                f"block '{block.id}': num and den must be nonempty coefficient lists"
-            )
+            raise ValueError(f"block '{block.id}': num and den must be nonempty coefficient lists")
         if not np.all(np.isfinite(num)) or not np.all(np.isfinite(den)):
-            raise ValueError(
-                f"block '{block.id}': polynomial coefficients must be finite"
-            )
+            raise ValueError(f"block '{block.id}': polynomial coefficients must be finite")
         den = np.trim_zeros(den, "f")
         if den.size == 0:
-            raise ValueError(
-                f"block '{block.id}': denominator cannot be identically zero"
-            )
+            raise ValueError(f"block '{block.id}': denominator cannot be identically zero")
         return _normalize_rational(num, den)
 
     if block.kind == "ss":
         if block.A is None or block.B is None or block.C is None:
-            raise ValueError(
-                f"block '{block.id}': state-space block needs A, B, and C"
-            )
+            raise ValueError(f"block '{block.id}': state-space block needs A, B, and C")
         D = block.D if block.D is not None else ((0.0,),)
         try:
             model = StateSpaceModel.from_matrices(block.A, block.B, block.C, D)
         except ValueError as error:
             raise ValueError(f"block '{block.id}': {error}") from error
         if model.input_count != 1 or model.output_count != 1:
-            raise ValueError(
-                f"block '{block.id}': interconnections support SISO blocks only"
-            )
+            raise ValueError(f"block '{block.id}': interconnections support SISO blocks only")
         report = normalize_plant(model)
         if report.numerator is None:
-            raise ValueError(
-                f"block '{block.id}': could not extract a transfer function"
-            )
+            raise ValueError(f"block '{block.id}': could not extract a transfer function")
         return (
             np.asarray(report.numerator, dtype=float),
             np.asarray(report.denominator, dtype=float),
@@ -229,9 +215,7 @@ def _block_rational(block: InterconnectBlock) -> Rational:
     return np.array([float(block.k)]), np.array([1.0])
 
 
-def _rational_chain(
-    ids: Sequence[str], systems: dict[str, Rational], label: str
-) -> list[Rational]:
+def _rational_chain(ids: Sequence[str], systems: dict[str, Rational], label: str) -> list[Rational]:
     chain: list[Rational] = []
     for block_id in ids:
         if block_id not in systems:
@@ -258,8 +242,7 @@ def _composite_model(num: np.ndarray, den: np.ndarray) -> StateSpaceModel:
     """
     if num.size > den.size:
         raise ValueError(
-            "composite transfer function is improper (numerator degree "
-            "exceeds denominator degree)"
+            "composite transfer function is improper (numerator degree exceeds denominator degree)"
         )
     order = den.size - 1
     if order == 0:
@@ -323,9 +306,7 @@ def analyze_composite(
     model = _composite_model(normalized_num, normalized_den)
     step = float(stop_time)
     resolved_step = float(time_step) if time_step is not None else step / 500.0
-    step_result = simulate_state_space(
-        model, resolved_step, step, lambda _t: (1.0,)
-    )
+    step_result = simulate_state_space(model, resolved_step, step, lambda _t: (1.0,))
     return InterconnectResult(
         composite_num=tuple(float(value) for value in normalized_num),
         composite_den=tuple(float(value) for value in normalized_den),
@@ -358,13 +339,9 @@ def interconnect(spec: InterconnectSpec) -> InterconnectResult:
             raise ValueError(f"duplicate block id '{block.id}'")
         systems[block.id] = _block_rational(block)
 
-    composite = _fold_series(
-        _rational_chain(spec.forward, systems, "forward path")
-    )
+    composite = _fold_series(_rational_chain(spec.forward, systems, "forward path"))
     if spec.parallel:
-        parallel = _fold_series(
-            _rational_chain(spec.parallel, systems, "parallel path")
-        )
+        parallel = _fold_series(_rational_chain(spec.parallel, systems, "parallel path"))
         composite = _parallel(composite, parallel)
 
     feedback = spec.feedback
@@ -374,25 +351,17 @@ def interconnect(spec: InterconnectSpec) -> InterconnectResult:
         elif feedback == "none":
             pass
         else:
-            raise ValueError(
-                "feedback must be 'none', 'unity', or a tuple of block ids"
-            )
+            raise ValueError("feedback must be 'none', 'unity', or a tuple of block ids")
     elif isinstance(feedback, (tuple, list)):
         path = _rational_chain(feedback, systems, "feedback path")
         composite = _feedback(composite, _fold_series(path))
     else:
-        raise ValueError(
-            "feedback must be 'none', 'unity', or a tuple of block ids"
-        )
+        raise ValueError("feedback must be 'none', 'unity', or a tuple of block ids")
 
     num, den = _normalize_rational(*composite)
     return analyze_composite(
         num,
         den,
         stop_time=float(spec.stop_time),
-        time_step=(
-            float(spec.time_step) if spec.time_step is not None else None
-        ),
+        time_step=(float(spec.time_step) if spec.time_step is not None else None),
     )
-
-

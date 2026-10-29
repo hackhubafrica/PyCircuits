@@ -36,7 +36,8 @@ from .interconnect import (
     block_transfer_function,
 )
 from .ir import IrMixin
-from .linear_systems import StateSpaceModel, transfer_function_to_state_space
+from .linear_systems import transfer_function_to_state_space
+
 MAX_GRAPH_NODES = 12
 MAX_GRAPH_EDGES = 32
 
@@ -117,13 +118,11 @@ class GraphSpec(IrMixin):
             raise ValueError("a graph needs at least one node")
         if len(self.nodes) > MAX_GRAPH_NODES:
             raise ValueError(
-                f"a graph may hold at most {MAX_GRAPH_NODES} nodes; "
-                f"got {len(self.nodes)}"
+                f"a graph may hold at most {MAX_GRAPH_NODES} nodes; got {len(self.nodes)}"
             )
         if len(self.edges) > MAX_GRAPH_EDGES:
             raise ValueError(
-                f"a graph may hold at most {MAX_GRAPH_EDGES} edges; "
-                f"got {len(self.edges)}"
+                f"a graph may hold at most {MAX_GRAPH_EDGES} edges; got {len(self.edges)}"
             )
         ids = [node.id for node in self.nodes]
         if len(set(ids)) != len(ids):
@@ -138,13 +137,11 @@ class GraphSpec(IrMixin):
         for edge in self.edges:
             if edge.source not in known:
                 raise ValueError(
-                    f"edge '{edge.source}'->'{edge.target}' refers to an "
-                    "unknown source node"
+                    f"edge '{edge.source}'->'{edge.target}' refers to an unknown source node"
                 )
             if edge.target not in known:
                 raise ValueError(
-                    f"edge '{edge.source}'->'{edge.target}' refers to an "
-                    "unknown target node"
+                    f"edge '{edge.source}'->'{edge.target}' refers to an unknown target node"
                 )
         for name, value in (
             ("stop_time", self.stop_time),
@@ -204,9 +201,7 @@ def _realize(
     )
 
 
-def _assemble(
-    blocks: list[np.ndarray], row_sizes: list[int], col_sizes: list[int]
-) -> np.ndarray:
+def _assemble(blocks: list[np.ndarray], row_sizes: list[int], col_sizes: list[int]) -> np.ndarray:
     """Place per-node blocks into a global matrix using cumulative offsets."""
     rows = sum(row_sizes)
     cols = sum(col_sizes)
@@ -237,16 +232,13 @@ def _aggregate(
 
     count = len(spec.nodes)
     state_sizes = [matrices[0].shape[0] for matrices in per_node]
-    total_states = sum(state_sizes)
     offsets: list[int] = []
     running = 0
     for size in state_sizes:
         offsets.append(running)
         running += size
 
-    A = _assemble(
-        [matrices[0] for matrices in per_node], state_sizes, state_sizes
-    )
+    A = _assemble([matrices[0] for matrices in per_node], state_sizes, state_sizes)
     B = _assemble([matrices[1] for matrices in per_node], state_sizes, [1] * count)
     C = _assemble([matrices[2] for matrices in per_node], [1] * count, state_sizes)
     D = _assemble([matrices[3] for matrices in per_node], [1] * count, [1] * count)
@@ -308,9 +300,7 @@ def _prune(spec: GraphSpec) -> GraphSpec:
     if len(live) == len(spec.nodes):
         return spec
     nodes = tuple(node for node in spec.nodes if node.id in live)
-    edges = tuple(
-        edge for edge in spec.edges if edge.source in live and edge.target in live
-    )
+    edges = tuple(edge for edge in spec.edges if edge.source in live and edge.target in live)
     return GraphSpec(
         nodes,
         edges,

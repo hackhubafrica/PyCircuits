@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from .mna import Component, GROUND_NODES, load_mna_config
-
+from .mna import GROUND_NODES, Component, load_mna_config
 
 COMPONENT_KINDS = (
     "resistor",
@@ -130,7 +129,10 @@ def validate_editor_netlist(
         p_root = groups.find(f"{node['id']}.p")
         n_root = groups.find(f"{node['id']}.n")
         if p_root == n_root:
-            raise ValueError(f"{component_data.get('name', node['id'])} is shorted: both terminals share one node")
+            raise ValueError(
+                f"{component_data.get('name', node['id'])} is shorted: "
+                "both terminals share one node"
+            )
         for root in (p_root, n_root):
             if root not in ground_roots and root not in root_names:
                 root_names[root] = f"N{len(root_names) + 1}"
@@ -159,10 +161,16 @@ def schematic_document(
     return payload
 
 
-def editor_from_document(payload: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def editor_from_document(
+    payload: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Load saved editor metadata or lay out an ordinary MNA netlist."""
     editor = payload.get("editor")
-    if isinstance(editor, dict) and isinstance(editor.get("nodes"), list) and isinstance(editor.get("wires"), list):
+    if (
+        isinstance(editor, dict)
+        and isinstance(editor.get("nodes"), list)
+        and isinstance(editor.get("wires"), list)
+    ):
         return editor["nodes"], editor["wires"]
 
     raw_components = payload.get("components")
@@ -198,7 +206,11 @@ def editor_from_document(payload: dict[str, Any]) -> tuple[list[dict[str, Any]],
                 )
             net_node = net_nodes[net_key]
             if terminal == "p":
-                wires.append({"id": f"wire_{len(wires) + 1}", "source": net_node, "target": component_id})
+                wires.append(
+                    {"id": f"wire_{len(wires) + 1}", "source": net_node, "target": component_id}
+                )
             else:
-                wires.append({"id": f"wire_{len(wires) + 1}", "source": component_id, "target": net_node})
+                wires.append(
+                    {"id": f"wire_{len(wires) + 1}", "source": component_id, "target": net_node}
+                )
     return nodes, wires

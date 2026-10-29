@@ -184,8 +184,20 @@ class MNATransientTests(unittest.TestCase):
                             },
                         },
                         {"name": "D1", "type": "diode", "p": "ac", "n": "out"},
-                        {"name": "RLOAD", "type": "resistor", "p": "out", "n": "0", "value": load_resistance},
-                        {"name": "CFILTER", "type": "capacitor", "p": "out", "n": "0", "value": capacitance},
+                        {
+                            "name": "RLOAD",
+                            "type": "resistor",
+                            "p": "out",
+                            "n": "0",
+                            "value": load_resistance,
+                        },
+                        {
+                            "name": "CFILTER",
+                            "type": "capacitor",
+                            "p": "out",
+                            "n": "0",
+                            "value": capacitance,
+                        },
                     ],
                     time_step=time_step,
                     stop_time=0.04,
@@ -205,7 +217,7 @@ class MNATransientTests(unittest.TestCase):
                     "name": "VAC",
                     "type": "voltage_source",
                     "p": "ac_a",
-                            "n": "0",
+                    "n": "0",
                     "waveform": {
                         "type": "sine",
                         "offset": 0.0,
@@ -218,7 +230,13 @@ class MNATransientTests(unittest.TestCase):
                 {"name": "D3", "type": "diode", "p": "dc_neg", "n": "ac_a"},
                 {"name": "D4", "type": "diode", "p": "dc_neg", "n": "0"},
                 {"name": "RLOAD", "type": "resistor", "p": "dc_pos", "n": "dc_neg", "value": 100.0},
-                {"name": "CFILTER", "type": "capacitor", "p": "dc_pos", "n": "dc_neg", "value": 0.001},
+                {
+                    "name": "CFILTER",
+                    "type": "capacitor",
+                    "p": "dc_pos",
+                    "n": "dc_neg",
+                    "value": 0.001,
+                },
             ],
             time_step=0.00002,
             stop_time=0.04,
@@ -228,7 +246,9 @@ class MNATransientTests(unittest.TestCase):
         output_voltage = [
             positive - negative
             for positive, negative in zip(
-                result.node_voltages["dc_pos"], result.node_voltages["dc_neg"]
+                result.node_voltages["dc_pos"],
+                result.node_voltages["dc_neg"],
+                strict=True,
             )
         ]
 

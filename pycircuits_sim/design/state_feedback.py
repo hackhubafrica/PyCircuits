@@ -10,17 +10,17 @@ pre-gain. Educational tool.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
 from ..analysis.plant import require_continuous, require_siso
+from ..ir import IrMixin
 from ..linear_systems import StateSpaceModel, simulate_state_space
 from ..optional import try_import_scipy
 from .tuning import ackermann_gain
-from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
@@ -85,24 +85,14 @@ def _closed_loop_step(
     closed_A = A - B @ gain
     real_parts = np.real(np.linalg.eigvals(closed_A))
     stable = -real_parts[real_parts < -1e-9]
-    stop_time = (
-        float(np.clip(8.0 / float(np.min(stable)), 2.0, 60.0))
-        if stable.size
-        else 12.0
-    )
+    stop_time = float(np.clip(8.0 / float(np.min(stable)), 2.0, 60.0)) if stable.size else 12.0
     time_step = stop_time / 500.0
 
     open_model = StateSpaceModel.from_matrices(A, B, C, D)
-    open_result = simulate_state_space(
-        open_model, time_step, stop_time, lambda _t: (1.0,)
-    )
+    open_result = simulate_state_space(open_model, time_step, stop_time, lambda _t: (1.0,))
     scale = 1.0 if nbar is None else nbar
-    closed_model = StateSpaceModel.from_matrices(
-        closed_A, B * scale, C - D @ gain, D * scale
-    )
-    closed_result = simulate_state_space(
-        closed_model, time_step, stop_time, lambda _t: (1.0,)
-    )
+    closed_model = StateSpaceModel.from_matrices(closed_A, B * scale, C - D @ gain, D * scale)
+    closed_result = simulate_state_space(closed_model, time_step, stop_time, lambda _t: (1.0,))
     open_trace = StepTrace(
         tuple(float(v) for v in open_result.time),
         tuple(float(v) for v in open_result.outputs["y1"]),
@@ -114,9 +104,7 @@ def _closed_loop_step(
     return open_trace, closed_trace
 
 
-def _nbar(
-    A: np.ndarray, B: np.ndarray, C: np.ndarray, gain: np.ndarray
-) -> float | None:
+def _nbar(A: np.ndarray, B: np.ndarray, C: np.ndarray, gain: np.ndarray) -> float | None:
     """Reference pre-gain: nbar = -1 / (C (A - BK)^-1 B)."""
     closed_A = A - B @ gain
     try:
@@ -177,9 +165,7 @@ def _payload(
         controllability_rank=rank,
         open_loop_poles=open_poles,
         closed_loop_poles=closed_poles,
-        desired_poles=(
-            tuple(complex(v) for v in desired) if desired is not None else None
-        ),
+        desired_poles=(tuple(complex(v) for v in desired) if desired is not None else None),
         open_step=open_step,
         closed_step=closed_step,
         q=None if q is None else tuple(float(v) for v in q),
@@ -189,9 +175,7 @@ def _payload(
     )
 
 
-def ackermann(
-    model: StateSpaceModel, desired_poles: Sequence[complex]
-) -> StateFeedbackResult:
+def ackermann(model: StateSpaceModel, desired_poles: Sequence[complex]) -> StateFeedbackResult:
     """Place all closed-loop poles with full state feedback (Ackermann).
 
     Computes K from the controllability-matrix inverse after checking the
@@ -221,9 +205,7 @@ def _lqr_scipy(
     try:
         from scipy import linalg as scipy_linalg  # noqa: PLC0415
 
-        s_matrix = scipy_linalg.solve_continuous_are(
-            A, B, q, np.array([[r]])
-        )
+        s_matrix = scipy_linalg.solve_continuous_are(A, B, q, np.array([[r]]))
     except Exception:
         return None
     gain = np.linalg.solve(np.array([[r]]), B.T @ s_matrix)
@@ -273,9 +255,7 @@ def _lqr_numpy(
     return np.atleast_2d(gain), s_matrix
 
 
-def lqr(
-    model: StateSpaceModel, q_diag: Sequence[float], r: float
-) -> StateFeedbackResult:
+def lqr(model: StateSpaceModel, q_diag: Sequence[float], r: float) -> StateFeedbackResult:
     """Linear-quadratic regulator for a SISO plant (diagonal Q, scalar R).
 
     Minimizes the integral of x^T Q x + u^T R u. Uses scipy's continuous
@@ -322,5 +302,3 @@ def lqr(
         r=float(r),
         s=s_matrix,
     )
-
-

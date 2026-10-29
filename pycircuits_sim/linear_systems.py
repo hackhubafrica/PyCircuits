@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 import json
 import math
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -195,7 +195,9 @@ class LinearClosedLoopResult(IrMixin):
     states: dict[str, list[float]]
 
 
-def load_linear_plant(path: str | Path) -> tuple[StateSpaceModel | DiscreteStateSpaceModel, dict[str, Any]]:
+def load_linear_plant(
+    path: str | Path,
+) -> tuple[StateSpaceModel | DiscreteStateSpaceModel, dict[str, Any]]:
     """Load a continuous/discrete state-space or proper transfer-function plant."""
     with Path(path).open(encoding="utf-8") as plant_file:
         data = json.load(plant_file)
@@ -208,15 +210,18 @@ def load_linear_plant(path: str | Path) -> tuple[StateSpaceModel | DiscreteState
         )
     elif plant_type == "discrete_state_space":
         model = DiscreteStateSpaceModel.from_matrices(
-            data.get("A"), data.get("B"), data.get("C"), data.get("D"),
+            data.get("A"),
+            data.get("B"),
+            data.get("C"),
+            data.get("D"),
             data.get("sample_time"),
         )
     elif plant_type == "transfer_function":
-        model = transfer_function_to_state_space(
-            data.get("numerator"), data.get("denominator")
-        )
+        model = transfer_function_to_state_space(data.get("numerator"), data.get("denominator"))
     else:
-        raise ValueError("plant type must be state_space, discrete_state_space, or transfer_function")
+        raise ValueError(
+            "plant type must be state_space, discrete_state_space, or transfer_function"
+        )
     return model, data
 
 
@@ -247,7 +252,9 @@ def transfer_function_to_state_space(
     num = np.asarray(numerator, dtype=float)
     den = np.asarray(denominator, dtype=float)
     if num.ndim != 1 or den.ndim != 1 or num.size == 0 or den.size < 2:
-        raise ValueError("numerator and denominator must be nonempty 1-D arrays; denominator degree >= 1")
+        raise ValueError(
+            "numerator and denominator must be nonempty 1-D arrays; denominator degree >= 1"
+        )
     if not np.all(np.isfinite(num)) or not np.all(np.isfinite(den)):
         raise ValueError("transfer-function coefficients must all be finite")
     if den[0] == 0:
@@ -284,9 +291,7 @@ def logarithmic_frequency_grid(
         raise ValueError("points_per_decade must be at least two")
     decade_count = math.log10(maximum_hz / minimum_hz)
     point_count = max(2, int(math.ceil(decade_count * points_per_decade)) + 1)
-    return np.logspace(
-        math.log10(minimum_hz), math.log10(maximum_hz), point_count
-    ).tolist()
+    return np.logspace(math.log10(minimum_hz), math.log10(maximum_hz), point_count).tolist()
 
 
 def frequency_response(
@@ -316,9 +321,7 @@ def frequency_response(
             transfer = C @ np.linalg.solve(1j * omega * identity - A, B) + D
         except np.linalg.LinAlgError as error:
             raise ValueError(f"frequency response solve failed at {frequency:g} Hz") from error
-        response.append(
-            [[complex(value) for value in row] for row in transfer.tolist()]
-        )
+        response.append([[complex(value) for value in row] for row in transfer.tolist()])
 
     poles = [complex(value) for value in np.linalg.eigvals(A)]
     poles.sort(key=lambda value: (value.real, value.imag))
@@ -339,7 +342,9 @@ def discrete_frequency_response(
         or np.any(frequencies <= 0)
         or np.any(frequencies >= nyquist_hz)
     ):
-        raise ValueError(f"discrete frequencies must be greater than zero and below Nyquist ({nyquist_hz:g} Hz)")
+        raise ValueError(
+            f"discrete frequencies must be greater than zero and below Nyquist ({nyquist_hz:g} Hz)"
+        )
 
     A = np.asarray(model.A, dtype=float)
     B = np.asarray(model.B, dtype=float)
@@ -352,7 +357,9 @@ def discrete_frequency_response(
         try:
             transfer = C @ np.linalg.solve(z * identity - A, B) + D
         except np.linalg.LinAlgError as error:
-            raise ValueError(f"discrete frequency response solve failed at {frequency:g} Hz") from error
+            raise ValueError(
+                f"discrete frequency response solve failed at {frequency:g} Hz"
+            ) from error
         response.append([[complex(value) for value in row] for row in transfer.tolist()])
     poles = [complex(value) for value in np.linalg.eigvals(A)]
     poles.sort(key=lambda value: (abs(value), value.real, value.imag))
@@ -384,7 +391,11 @@ def simulate_state_space(
     B = np.asarray(model.B, dtype=float)
     C = np.asarray(model.C, dtype=float)
     D = np.asarray(model.D, dtype=float)
-    states = np.zeros(model.state_count, dtype=float) if initial_state is None else np.asarray(initial_state, dtype=float)
+    states = (
+        np.zeros(model.state_count, dtype=float)
+        if initial_state is None
+        else np.asarray(initial_state, dtype=float)
+    )
     if states.shape != (model.state_count,) or not np.all(np.isfinite(states)):
         raise ValueError("initial_state must have one finite value per state")
 
@@ -450,7 +461,11 @@ def simulate_discrete_state_space(
     B = np.asarray(model.B, dtype=float)
     C = np.asarray(model.C, dtype=float)
     D = np.asarray(model.D, dtype=float)
-    states = np.zeros(model.state_count, dtype=float) if initial_state is None else np.asarray(initial_state, dtype=float)
+    states = (
+        np.zeros(model.state_count, dtype=float)
+        if initial_state is None
+        else np.asarray(initial_state, dtype=float)
+    )
     if states.shape != (model.state_count,) or not np.all(np.isfinite(states)):
         raise ValueError("initial_state must have one finite value per state")
 
@@ -501,13 +516,19 @@ def simulate_discrete_state_space_pid(
         raise ValueError("stop_time must be finite and greater than zero")
     ratio = controller.sample_time / model.sample_time
     controller_steps = round(ratio)
-    if controller_steps < 1 or not math.isclose(ratio, controller_steps, rel_tol=1e-10, abs_tol=1e-12):
+    if controller_steps < 1 or not math.isclose(
+        ratio, controller_steps, rel_tol=1e-10, abs_tol=1e-12
+    ):
         raise ValueError("controller sample_time must be an integer multiple of plant sample_time")
 
     A = np.asarray(model.A, dtype=float)
     B = np.asarray(model.B, dtype=float)
     C = np.asarray(model.C, dtype=float)
-    states = np.zeros(model.state_count, dtype=float) if initial_state is None else np.asarray(initial_state, dtype=float)
+    states = (
+        np.zeros(model.state_count, dtype=float)
+        if initial_state is None
+        else np.asarray(initial_state, dtype=float)
+    )
     if states.shape != (model.state_count,) or not np.all(np.isfinite(states)):
         raise ValueError("initial_state must have one finite value per state")
     step_count = int(math.floor(stop_time / model.sample_time + 1e-12))
@@ -517,7 +538,10 @@ def simulate_discrete_state_space_pid(
     integral_state = 0.0
     previous_output = float((C @ states)[0])
     derivative_reference_output = previous_output
-    control = min(controller.output_max, max(controller.output_min, controller.kp * (reference.at(0.0) - previous_output)))
+    control = min(
+        controller.output_max,
+        max(controller.output_min, controller.kp * (reference.at(0.0) - previous_output)),
+    )
     p_term = controller.kp * (reference.at(0.0) - previous_output)
     i_term = 0.0
     d_term = 0.0
@@ -537,13 +561,24 @@ def simulate_discrete_state_space_pid(
         if sample_index > 0 and sample_index % controller_steps == 0:
             error_value = reference.at(time) - output_value
             p_term = controller.kp * error_value
-            d_term = -controller.kd * (output_value - derivative_reference_output) / controller.sample_time
-            candidate_integral = integral_state + controller.ki * error_value * controller.sample_time
+            d_term = (
+                -controller.kd
+                * (output_value - derivative_reference_output)
+                / controller.sample_time
+            )
+            candidate_integral = (
+                integral_state + controller.ki * error_value * controller.sample_time
+            )
             candidate = p_term + candidate_integral + d_term
-            if not ((candidate > controller.output_max and error_value > 0) or (candidate < controller.output_min and error_value < 0)):
+            if not (
+                (candidate > controller.output_max and error_value > 0)
+                or (candidate < controller.output_min and error_value < 0)
+            ):
                 integral_state = candidate_integral
             i_term = integral_state
-            control = min(controller.output_max, max(controller.output_min, p_term + i_term + d_term))
+            control = min(
+                controller.output_max, max(controller.output_min, p_term + i_term + d_term)
+            )
             derivative_reference_output = output_value
 
         reference_value = reference.at(time)
@@ -560,7 +595,9 @@ def simulate_discrete_state_space_pid(
         if sample_index < step_count:
             states = A @ states + B[:, 0] * control
 
-    return LinearClosedLoopResult(times, references, outputs, errors, controls, p_terms, i_terms, d_terms, state_traces)
+    return LinearClosedLoopResult(
+        times, references, outputs, errors, controls, p_terms, i_terms, d_terms, state_traces
+    )
 
 
 def simulate_state_space_pid(
@@ -576,16 +613,16 @@ def simulate_state_space_pid(
     if model.input_count != 1 or model.output_count != 1:
         raise ValueError("the initial PID loop supports SISO plants only")
     if not math.isclose(model.D[0][0], 0.0, abs_tol=1e-15):
-        raise ValueError(
-            "PID feedback currently requires D=0 to avoid an algebraic loop"
-        )
+        raise ValueError("PID feedback currently requires D=0 to avoid an algebraic loop")
     if reference.step_time > stop_time:
         raise ValueError("reference step_time cannot exceed simulation stop_time")
     if not math.isfinite(time_step) or time_step <= 0:
         raise ValueError("time_step must be finite and greater than zero")
     ratio = controller.sample_time / time_step
     controller_steps = round(ratio)
-    if controller_steps < 1 or not math.isclose(ratio, controller_steps, rel_tol=1e-10, abs_tol=1e-12):
+    if controller_steps < 1 or not math.isclose(
+        ratio, controller_steps, rel_tol=1e-10, abs_tol=1e-12
+    ):
         raise ValueError("controller sample_time must be an integer multiple of time_step")
     step_count = _step_count(stop_time, time_step)
     if step_count > max_steps:
@@ -595,13 +632,18 @@ def simulate_state_space_pid(
     B = np.asarray(model.B, dtype=float)
     C = np.asarray(model.C, dtype=float)
     D = np.asarray(model.D, dtype=float)
-    states = np.zeros(model.state_count, dtype=float) if initial_state is None else np.asarray(initial_state, dtype=float)
+    states = (
+        np.zeros(model.state_count, dtype=float)
+        if initial_state is None
+        else np.asarray(initial_state, dtype=float)
+    )
     if states.shape != (model.state_count,) or not np.all(np.isfinite(states)):
         raise ValueError("initial_state must have one finite value per state")
 
     identity = np.eye(model.state_count)
     integral_state = 0.0
     previous_output = float((C @ states)[0])
+    derivative_reference_output = previous_output
     proportional_value = controller.kp * (reference.at(0.0) - previous_output)
     integral_value = 0.0
     derivative_value = 0.0
@@ -626,12 +668,16 @@ def simulate_state_space_pid(
             setpoint = reference.at(step_start)
             error_value = setpoint - previous_output
             proportional_value = controller.kp * error_value
-            derivative_value = -controller.kd * (previous_output - derivative_reference_output) / controller.sample_time
-            candidate_integral = integral_state + controller.ki * error_value * controller.sample_time
+            derivative_value = (
+                -controller.kd
+                * (previous_output - derivative_reference_output)
+                / controller.sample_time
+            )
+            candidate_integral = (
+                integral_state + controller.ki * error_value * controller.sample_time
+            )
             candidate_control = proportional_value + candidate_integral + derivative_value
-            if not (
-                candidate_control > controller.output_max and error_value > 0
-            ) and not (
+            if not (candidate_control > controller.output_max and error_value > 0) and not (
                 candidate_control < controller.output_min and error_value < 0
             ):
                 integral_state = candidate_integral
@@ -640,9 +686,6 @@ def simulate_state_space_pid(
                 controller.output_max,
                 max(controller.output_min, proportional_value + integral_value + derivative_value),
             )
-            derivative_reference_output = previous_output
-
-        if step_index == 0:
             derivative_reference_output = previous_output
 
         time = min((step_index + 1) * time_step, stop_time)

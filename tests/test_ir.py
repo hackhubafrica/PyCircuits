@@ -107,9 +107,7 @@ class IrRoundTripTests(unittest.TestCase):
 
     def test_interconnect_result(self):
         spec = InterconnectSpec(
-            blocks=(
-                InterconnectBlock(id="g", kind="tf", num=(1.0,), den=(1.0, 1.0)),
-            ),
+            blocks=(InterconnectBlock(id="g", kind="tf", num=(1.0,), den=(1.0, 1.0)),),
             forward=("g",),
             feedback="unity",
             stop_time=2.0,

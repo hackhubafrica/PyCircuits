@@ -13,7 +13,7 @@ from pycircuits_sim import (
     ReferenceStep,
     simulate_closed_loop,
 )
-from pycircuits_sim.io import load_closed_loop_config, write_closed_loop_csv
+from pycircuits_sim.io import write_closed_loop_csv
 from pycircuits_sim.plotting import plot_closed_loop
 
 

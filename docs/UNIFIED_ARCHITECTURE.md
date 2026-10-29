@@ -106,6 +106,7 @@ class StabilityReport:
     max_real_pole: float | None
     max_real_eig: float | None
 
+
 @dataclass(frozen=True)
 class StepMetrics:
     rise_time_s: float | None
@@ -115,21 +116,23 @@ class StepMetrics:
     peak_time_s: float | None
     steady_state: float | None
 
+
 @dataclass(frozen=True)
 class MarginResult:
-    gain_margin: float | None          # linear
+    gain_margin: float | None  # linear
     gain_margin_db: float | None
     phase_margin_deg: float | None
     gain_crossover_rads: float | None
     phase_crossover_rads: float | None
-    omega_rads: tuple[float, ...]      # grid used
+    omega_rads: tuple[float, ...]  # grid used
     magnitude_db: tuple[float, ...]
     phase_deg: tuple[float, ...]
+
 
 @dataclass(frozen=True)
 class RootLocusResult:
     gains: tuple[float, ...]
-    branches: tuple[tuple[complex, ...], ...]   # one tuple per branch
+    branches: tuple[tuple[complex, ...], ...]  # one tuple per branch
     open_loop_poles: tuple[complex, ...]
     open_loop_zeros: tuple[complex, ...]
 ```
@@ -228,14 +231,39 @@ Phase exports follow the existing import-and-list pattern in `__init__.py`:
 
 ```python
 # Phase 1 (analysis)
-StabilityReport, StepMetrics, MarginResult, RootLocusResult,
-normalize_plant, analyze_stability, step_metrics,
-bode_margins, nyquist_response, root_locus,
+(
+    StabilityReport,
+    StepMetrics,
+    MarginResult,
+    RootLocusResult,
+)
+(
+    normalize_plant,
+    analyze_stability,
+    step_metrics,
+)
+(
+    bode_margins,
+    nyquist_response,
+    root_locus,
+)
 # Phase 2 (design)
-TuneResult, StateFeedbackResult,
-ziegler_nichols, tune_pole_placement, ackermann, lqr,
+(
+    TuneResult,
+    StateFeedbackResult,
+)
+(
+    ziegler_nichols,
+    tune_pole_placement,
+    ackermann,
+    lqr,
+)
 # Phase 3
-InterconnectSpec, InterconnectResult, interconnect,
+(
+    InterconnectSpec,
+    InterconnectResult,
+    interconnect,
+)
 ```
 
 Naming rule: keep the ControlKit verb names where they are already good

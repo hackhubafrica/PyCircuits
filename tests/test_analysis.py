@@ -8,8 +8,8 @@ from pycircuits_sim.analysis import (
     NyquistResult,
     PlantReport,
     RootLocusResult,
-    StepMetrics,
     StabilityReport,
+    StepMetrics,
     analyze_stability,
     bode_margins,
     normalize_plant,
@@ -35,9 +35,7 @@ def unit_step(model, time_step: float, stop_time: float):
 def _discrete_model():
     from pycircuits_sim.linear_systems import DiscreteStateSpaceModel
 
-    return DiscreteStateSpaceModel.from_matrices(
-        [[0.9]], [[0.1]], [[1.0]], [[0.0]], 0.01
-    )
+    return DiscreteStateSpaceModel.from_matrices([[0.9]], [[0.1]], [[1.0]], [[0.0]], 0.01)
 
 
 class PlantNormalizationTests(unittest.TestCase):
@@ -206,9 +204,7 @@ class NyquistTests(unittest.TestCase):
         # G(j*1e-3) ~= 1/(1+j*1e-3): real ~= 1, imag ~= -1e-3.
         self.assertAlmostEqual(result.real[0], 1.0, delta=1e-3)
         self.assertAlmostEqual(result.imaginary[0], -1e-3, delta=1e-4)
-        self.assertEqual(
-            len(result.real), len(result.imaginary), len(result.frequencies_rad_s)
-        )
+        self.assertEqual(len(result.real), len(result.imaginary), len(result.frequencies_rad_s))
         # High-frequency end tends to the origin for a strictly proper plant.
         self.assertLess(abs(result.real[-1] + 1j * result.imaginary[-1]), 0.01)
 
@@ -234,7 +230,7 @@ class RootLocusTests(unittest.TestCase):
         poles = sorted(locus.open_loop_poles, key=lambda z: z.real)
         self.assertAlmostEqual(poles[0].real, -1.0, places=6)
         self.assertAlmostEqual(poles[1].real, 0.0, places=6)
-        for branch, pole in zip(locus.branches, locus.open_loop_poles):
+        for branch, pole in zip(locus.branches, locus.open_loop_poles, strict=True):
             self.assertAlmostEqual(branch[0], pole, places=9)
 
     def test_locus_branches_head_toward_zeros(self) -> None:
@@ -259,9 +255,7 @@ class RootLocusTests(unittest.TestCase):
             root_locus(mimo)
 
 
-@unittest.skipUnless(
-    try_import_control() is not None, "python-control not installed"
-)
+@unittest.skipUnless(try_import_control() is not None, "python-control not installed")
 class ControlFastPathTests(unittest.TestCase):
     def test_numpy_margins_agree_with_python_control(self) -> None:
         control = try_import_control()
@@ -279,4 +273,3 @@ class ControlFastPathTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

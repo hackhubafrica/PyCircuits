@@ -45,13 +45,13 @@ Example
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import MISSING, fields, is_dataclass
 import enum
 import json
 import math
 import types
 import typing
+from collections.abc import Mapping
+from dataclasses import MISSING, fields, is_dataclass
 from typing import Any, Union, get_args, get_origin
 
 __all__ = [
@@ -96,10 +96,7 @@ class IrMixin:
         """Decode an IR document back into an instance of this class."""
         decoded = from_ir(payload)
         if not isinstance(decoded, cls):
-            raise IrError(
-                f"the IR document holds a {type(decoded).__name__}, "
-                f"not a {cls.__name__}"
-            )
+            raise IrError(f"the IR document holds a {type(decoded).__name__}, not a {cls.__name__}")
         return decoded
 
 
@@ -110,8 +107,7 @@ def _encode_float(value: float) -> float:
     """Encode a float, rejecting NaN/inf which JSON cannot represent."""
     if not math.isfinite(value):
         raise IrError(
-            "the IR cannot encode non-finite floats; "
-            "NaN and infinity have no JSON representation"
+            "the IR cannot encode non-finite floats; NaN and infinity have no JSON representation"
         )
     return value
 
@@ -186,10 +182,7 @@ def _encode_value(value: Any) -> Any:
         # Nested dataclasses are encoded inline (their fields only). The
         # surrounding envelope already carries the kind, and the decoder
         # recovers the nested type from the dataclass field annotation.
-        return {
-            field.name: _encode_value(getattr(value, field.name))
-            for field in fields(value)
-        }
+        return {field.name: _encode_value(getattr(value, field.name)) for field in fields(value)}
     if isinstance(value, Mapping):
         return {str(key): _encode_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -236,6 +229,7 @@ def _collect_registry() -> dict[str, type]:
 
     module_names = (
         "pycircuits_sim.analysis",
+        "pycircuits_sim.block_diagram",
         "pycircuits_sim.buck",
         "pycircuits_sim.closed_loop",
         "pycircuits_sim.design",
@@ -336,9 +330,7 @@ def _decode_sequence(
 
     # A fixed-length tuple: the number of arguments is the exact arity.
     if origin is tuple and len(args) != len(value):
-        raise IrError(
-            f"expected a tuple of {len(args)} items, got {len(value)}"
-        )
+        raise IrError(f"expected a tuple of {len(args)} items, got {len(value)}")
     decoded: list[Any] = []
     for index, item in enumerate(value):
         if index < len(args):
@@ -388,9 +380,7 @@ def _decode_value(value: Any, hint: Any) -> Any:
             raise IrError(f"cannot decode {value!r} as a mapping")
         args = get_args(hint)
         value_hint = args[1] if len(args) == 2 else Any
-        return {
-            str(key): _decode_value(item, value_hint) for key, item in value.items()
-        }
+        return {str(key): _decode_value(item, value_hint) for key, item in value.items()}
 
     if _is_dataclass_hint(hint):
         if not isinstance(value, Mapping):
@@ -412,17 +402,12 @@ def _decode_dataclass(cls: type, payload: Mapping[str, Any]) -> Any:
     for field in fields(cls):
         if field.name not in payload:
             has_default = (
-                field.default is not MISSING
-                or field.default_factory is not MISSING  # type: ignore[misc]
+                field.default is not MISSING or field.default_factory is not MISSING  # type: ignore[misc]
             )
             if has_default:
                 continue
-            raise IrError(
-                f"payload for {cls.__name__} is missing required field {field.name!r}"
-            )
-        kwargs[field.name] = _decode_value(
-            payload[field.name], hints.get(field.name, Any)
-        )
+            raise IrError(f"payload for {cls.__name__} is missing required field {field.name!r}")
+        kwargs[field.name] = _decode_value(payload[field.name], hints.get(field.name, Any))
     return cls(**kwargs)
 
 
@@ -437,9 +422,7 @@ def from_ir(payload: Mapping[str, Any]) -> Any:
         raise IrError("an IR document must be a JSON object")
     version = payload.get("ir_version")
     if version != IR_VERSION:
-        raise IrError(
-            f"unsupported IR version {version!r}; this build reads {IR_VERSION!r}"
-        )
+        raise IrError(f"unsupported IR version {version!r}; this build reads {IR_VERSION!r}")
     kind = payload.get("kind")
     if not isinstance(kind, str):
         raise IrError("an IR document must carry a string 'kind'")
@@ -560,9 +543,7 @@ def build_ir_schema() -> dict[str, Any]:
     >>> schema["$defs"]["IREnvelope"]["properties"]["ir_version"]["const"]
     '1.0'
     """
-    defs = {
-        name: _schema_for_dataclass(cls) for name, cls in sorted(registry().items())
-    }
+    defs = {name: _schema_for_dataclass(cls) for name, cls in sorted(registry().items())}
     # The envelope itself, plus one conditional per kind so that "data" is
     # validated against the definition matching the declared "kind".
     conditionals = [

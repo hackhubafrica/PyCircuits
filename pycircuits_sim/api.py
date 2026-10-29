@@ -43,6 +43,7 @@ from .analysis import (
     root_locus,
     step_metrics,
 )
+from .block_diagram import BlockDiagramDocument, BlockDiagramEdge, BlockDiagramNode
 from .design import (
     PIDGains,
     ackermann,
@@ -51,6 +52,7 @@ from .design import (
     tune_pole_placement,
     ziegler_nichols,
 )
+from .graph import interconnect_graph
 from .interconnect import InterconnectBlock, InterconnectSpec, interconnect
 from .linear_systems import (
     StateSpaceModel,
@@ -147,6 +149,38 @@ class InterconnectRequest(BaseModel):
     n_points: int = Field(default=500, ge=50, le=5000)
 
 
+class GraphNodeSpec(BaseModel):
+    id: str = Field(min_length=1, max_length=32)
+    kind: Literal["tf", "ss", "pid", "gain"]
+    num: list[float] | None = None
+    den: list[float] | None = None
+    A: list[list[float]] | None = None
+    B: list[list[float]] | None = None
+    C: list[list[float]] | None = None
+    D: list[list[float]] | None = None
+    gains: PidGains | None = None
+    derivative_filter: float | None = None
+    k: float | None = None
+    position: list[float] = Field(default_factory=lambda: [0.0, 0.0])
+
+
+class GraphEdgeSpec(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    source: str = Field(min_length=1, max_length=32)
+    target: str = Field(min_length=1, max_length=32)
+    gain: float = 1.0
+    label: str = ""
+
+
+class BlockDiagramRequest(BaseModel):
+    nodes: list[GraphNodeSpec] = Field(min_length=1, max_length=12)
+    edges: list[GraphEdgeSpec] = Field(default_factory=list, max_length=32)
+    input_node: str = Field(min_length=1, max_length=32)
+    output_node: str = Field(min_length=1, max_length=32)
+    t_final: float = Field(default=10.0, gt=0)
+    n_points: int = Field(default=500, ge=50, le=5000)
+
+
 # --- Helpers ----------------------------------------------------------------
 
 
@@ -167,9 +201,7 @@ def _build_model(spec: PlantSpec) -> StateSpaceModel:
     """Build a continuous SISO StateSpaceModel from a PlantSpec (SISO gate)."""
     if spec.form == "tf":
         if spec.num is None or spec.den is None:
-            raise ValueError(
-                "transfer-function plants need numerator and denominator coefficients"
-            )
+            raise ValueError("transfer-function plants need numerator and denominator coefficients")
         model = transfer_function_to_state_space(spec.num, spec.den)
     else:
         if spec.A is None or spec.B is None or spec.C is None:
@@ -186,9 +218,7 @@ def _build_model(spec: PlantSpec) -> StateSpaceModel:
             spec.A, spec.B, spec.C, spec.D if spec.D is not None else default_d
         )
     if model.input_count != 1 or model.output_count != 1:
-        raise ValueError(
-            "this API analyzes SISO plants only (use the Python API for MIMO)"
-        )
+        raise ValueError("this API analyzes SISO plants only (use the Python API for MIMO)")
     return model
 
 
@@ -272,18 +302,22 @@ def _custom_series(model, t, u, n_points: int) -> dict:
     times = np.asarray(t, dtype=float)
     values = np.asarray(u, dtype=float)
     if times.ndim != 1 or times.size != values.size or times.size < 2:
-        raise ValueError(
-            "t and u must be the same length with at least two samples"
-        )
+        raise ValueError("t and u must be the same length with at least two samples")
     if not np.all(np.isfinite(times)) or not np.all(np.isfinite(values)):
         raise ValueError("t and u must contain finite values")
     if np.any(np.diff(times) <= 0):
         raise ValueError("Time vector t must be strictly increasing")
     count = int(np.clip(max(times.size, int(n_points)), 50, 5000))
     span = float(times[-1] - times[0])
-    signal = lambda _t, offset=float(times[0]), xs=times, ys=values: (
-        float(np.interp(_t + offset, xs, ys)),
-    )
+
+    def signal(
+        _t: float,
+        offset: float = float(times[0]),
+        xs: np.ndarray = times,
+        ys: np.ndarray = values,
+    ) -> float:
+        return float(np.interp(_t + offset, xs, ys))
+
     result = simulate_state_space(model, span / (count - 1), span, signal)
     shifted = [value + float(times[0]) for value in result.time]
     u_out = [float(np.interp(value, times, values)) for value in shifted]
@@ -316,7 +350,10 @@ def _locus_payload(result) -> dict:
     return {
         "gains": gains,
         "branches": [
-            {"re": _floats(root.real for root in branch), "im": _floats(root.imag for root in branch)}
+            {
+                "re": _floats(root.real for root in branch),
+                "im": _floats(root.imag for root in branch),
+            }
             for branch in result.branches
         ],
         "open_loop_poles": _cplx_list(result.open_loop_poles),
@@ -393,9 +430,7 @@ def _plant_block(model, block_id: str) -> InterconnectBlock:
     report = normalize_plant(model)
     if report.numerator is None:
         raise ValueError("could not extract a transfer function from the plant")
-    return InterconnectBlock(
-        id=block_id, kind="tf", num=report.numerator, den=report.denominator
-    )
+    return InterconnectBlock(id=block_id, kind="tf", num=report.numerator, den=report.denominator)
 
 
 # --- Application -------------------------------------------------------------
@@ -512,9 +547,7 @@ def pid_closed_loop(req: PidClosedLoopRequest) -> dict:
             time_step=time_step,
         )
     )
-    controller_num, controller_den = pid_transfer_function(
-        gains.Kp, gains.Ki, gains.Kd, gains.N
-    )
+    controller_num, controller_den = pid_transfer_function(gains.Kp, gains.Ki, gains.Kd, gains.N)
     closed_metrics = step_metrics(closed.step.time_s, closed.step.output)
     return {
         "gains": gains.model_dump(),
@@ -545,7 +578,11 @@ def pid_tune(req: PidTuneRequest) -> dict:
         if result.p_gains is not None and result.pi_gains is not None:
             variants = {
                 "P": {"Kp": result.p_gains.kp, "Ki": result.p_gains.ki, "Kd": result.p_gains.kd},
-                "PI": {"Kp": result.pi_gains.kp, "Ki": result.pi_gains.ki, "Kd": result.pi_gains.kd},
+                "PI": {
+                    "Kp": result.pi_gains.kp,
+                    "Ki": result.pi_gains.ki,
+                    "Kd": result.pi_gains.kd,
+                },
                 "PID": {"Kp": result.gains.kp, "Ki": result.gains.ki, "Kd": result.gains.kd},
             }
         fit = result.fopdt
@@ -608,11 +645,7 @@ def sf_lqr(req: LqrRequest) -> dict:
 @handle_errors
 def interconnect_endpoint(req: InterconnectRequest) -> dict:
     def rows(matrix):
-        return (
-            tuple(tuple(float(v) for v in row) for row in matrix)
-            if matrix is not None
-            else None
-        )
+        return tuple(tuple(float(v) for v in row) for row in matrix) if matrix is not None else None
 
     blocks = []
     for block in req.blocks:
@@ -656,9 +689,7 @@ def interconnect_endpoint(req: InterconnectRequest) -> dict:
         "structure": {
             "forward": list(spec.forward),
             "parallel": list(spec.parallel) if spec.parallel else None,
-            "feedback": spec.feedback
-            if isinstance(spec.feedback, str)
-            else list(spec.feedback),
+            "feedback": spec.feedback if isinstance(spec.feedback, str) else list(spec.feedback),
         },
         "plant": _plant_payload(result.plant),
         "stability": _stability_payload(result.stability),
@@ -676,6 +707,92 @@ def interconnect_endpoint(req: InterconnectRequest) -> dict:
     }
 
 
+@app.post("/api/block-diagram")
+@handle_errors
+def block_diagram_endpoint(req: BlockDiagramRequest) -> dict:
+    """Compose a block-diagram canvas into one closed-loop transfer function."""
 
+    def rows(matrix):
+        return tuple(tuple(float(v) for v in row) for row in matrix) if matrix is not None else None
 
-
+    nodes = []
+    for node in req.nodes:
+        gains = None
+        if node.gains is not None:
+            gains = PIDGains(kp=node.gains.Kp, ki=node.gains.Ki, kd=node.gains.Kd)
+        position = (float(node.position[0]), float(node.position[1]))
+        nodes.append(
+            BlockDiagramNode(
+                id=node.id,
+                block=InterconnectBlock(
+                    id=node.id,
+                    kind=node.kind,
+                    num=tuple(node.num) if node.num is not None else None,
+                    den=tuple(node.den) if node.den is not None else None,
+                    A=rows(node.A),
+                    B=rows(node.B),
+                    C=rows(node.C),
+                    D=rows(node.D),
+                    gains=gains,
+                    derivative_filter=node.derivative_filter,
+                    k=node.k,
+                ),
+                position=position,
+            )
+        )
+    edges = [
+        BlockDiagramEdge(
+            id=edge.id,
+            source=edge.source,
+            target=edge.target,
+            gain=edge.gain,
+            label=edge.label,
+        )
+        for edge in req.edges
+    ]
+    document = BlockDiagramDocument(
+        nodes=tuple(nodes),
+        edges=tuple(edges),
+        input_node=req.input_node,
+        output_node=req.output_node,
+        stop_time=float(req.t_final),
+        time_step=_time_step(req.t_final, req.n_points),
+    )
+    result = interconnect_graph(document.to_graph())
+    composite_model = StateSpaceModel.from_matrices(
+        result.plant.A, result.plant.B, result.plant.C, result.plant.D
+    )
+    closed_metrics = step_metrics(result.step.time_s, result.step.output)
+    return {
+        "composite": {
+            "num": list(result.composite_num),
+            "den": list(result.composite_den),
+        },
+        "structure": {
+            "nodes": [node.id for node in document.nodes],
+            "edges": [
+                {
+                    "id": edge.id,
+                    "source": edge.source,
+                    "target": edge.target,
+                    "gain": edge.gain,
+                }
+                for edge in document.edges
+            ],
+            "input_node": document.input_node,
+            "output_node": document.output_node,
+        },
+        "plant": _plant_payload(result.plant),
+        "stability": _stability_payload(result.stability),
+        "step": _series(
+            "step",
+            result.step.time_s,
+            result.step.output,
+            None,
+            _metrics_payload(closed_metrics),
+        ),
+        "impulse": _impulse_series(composite_model, req.t_final, req.n_points),
+        "bode": _bode_payload(result.margins),
+        "nyquist": _nyquist_payload(result.nyquist),
+        "root_locus": _locus_payload(result.root_locus),
+    }

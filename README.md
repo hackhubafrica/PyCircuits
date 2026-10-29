@@ -232,20 +232,20 @@ Continuous-time LTI plants can be created directly with the public API:
 
 ```python
 from pycircuits_sim import (
-	LinearPIDConfig,
-	StateSpaceModel,
-	StepReference,
-	simulate_state_space_pid,
-	transfer_function_to_state_space,
+    LinearPIDConfig,
+    StateSpaceModel,
+    StepReference,
+    simulate_state_space_pid,
+    transfer_function_to_state_space,
 )
 
 plant = transfer_function_to_state_space([1.0], [1.0, 1.0])
 result = simulate_state_space_pid(
-	plant,
-	LinearPIDConfig(kp=0.8, ki=2.0, kd=0.0, sample_time=0.01),
-	StepReference(initial=0.0, final=1.0, step_time=0.1),
-	time_step=0.001,
-	stop_time=2.0,
+    plant,
+    LinearPIDConfig(kp=0.8, ki=2.0, kd=0.0, sample_time=0.01),
+    StepReference(initial=0.0, final=1.0, step_time=0.1),
+    time_step=0.001,
+    stop_time=2.0,
 )
 ```
 
@@ -377,8 +377,8 @@ runtime payload cannot drift apart:
 ```python
 from pycircuits_sim import build_ir_schema, validate_ir
 
-schema = build_ir_schema()   # JSON Schema draft 2020-12
-validate_ir(payload)         # raises IrError on a malformed document
+schema = build_ir_schema()  # JSON Schema draft 2020-12
+validate_ir(payload)  # raises IrError on a malformed document
 ```
 
 Complex numbers encode as `{"re", "im"}`. NaN and infinity are rejected with

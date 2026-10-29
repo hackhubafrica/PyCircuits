@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from statistics import fmean
 
-from .sweep import SweepRun
 from .ir import IrMixin
+from .sweep import SweepRun
 
 
 @dataclass(frozen=True)

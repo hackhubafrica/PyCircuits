@@ -78,8 +78,7 @@ class BuckSimulationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output_path = Path(directory) / "bad.csv"
             output_path.write_text(
-                "time_s,inductor_current_a,output_voltage_v,switch_on\n"
-                "0,0,0,maybe\n",
+                "time_s,inductor_current_a,output_voltage_v,switch_on\n0,0,0,maybe\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "row 2: switch_on"):

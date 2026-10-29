@@ -15,15 +15,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..ir import IrMixin
 from ..linear_systems import StateSpaceModel
 from ..optional import try_import_control
 from .plant import (
+    normalize_plant,
     require_continuous,
     require_siso,
-    siso_polynomials,
-    normalize_plant,
 )
-from ..ir import IrMixin
 
 
 @dataclass(frozen=True)
@@ -91,9 +90,7 @@ def root_locus(
             or np.any(grid < 0)
             or np.any(np.diff(grid) < 0)
         ):
-            raise ValueError(
-                "gains must be a nondecreasing sequence of nonnegative finite values"
-            )
+            raise ValueError("gains must be a nondecreasing sequence of nonnegative finite values")
 
     report = normalize_plant(model)
     if report.numerator is None:
@@ -116,17 +113,14 @@ def root_locus(
         remaining = list(range(order))
         column_order: list[int] = []
         for target in open_loop_poles:
-            nearest = min(
-                remaining, key=lambda candidate: abs(loci[0, candidate] - target)
-            )
+            nearest = min(remaining, key=lambda candidate: abs(loci[0, candidate] - target))
             remaining.remove(nearest)
             column_order.append(nearest)
         ordered = np.empty_like(loci)
         for index in range(loci.shape[0]):
             ordered[index] = loci[index, column_order]
         branches = [
-            tuple(complex(value) for value in ordered[:, branch])
-            for branch in range(order)
+            tuple(complex(value) for value in ordered[:, branch]) for branch in range(order)
         ]
     else:
         # np.roots returns an unordered set per gain, so track branches by
@@ -136,9 +130,7 @@ def root_locus(
         padded_numerator = np.zeros(order + 1)
         offset = order + 1 - numerator.size
         padded_numerator[offset:] = numerator
-        roots_per_gain = [
-            np.roots(denominator + gain * padded_numerator) for gain in actual_gains
-        ]
+        roots_per_gain = [np.roots(denominator + gain * padded_numerator) for gain in actual_gains]
         initial = sorted(
             (complex(value) for value in roots_per_gain[0]),
             key=lambda value: (value.real, value.imag),
@@ -149,7 +141,7 @@ def root_locus(
         for gain_roots in roots_per_gain[1:]:
             candidates = [complex(value) for value in gain_roots]
             claimed = [False] * len(candidates)
-            for branch, prior in zip(branches_list, previous):
+            for branch, prior in zip(branches_list, previous, strict=True):
                 nearest = min(
                     (index for index in range(len(candidates)) if not claimed[index]),
                     key=lambda index: abs(candidates[index] - prior),
@@ -165,4 +157,3 @@ def root_locus(
         open_loop_poles=open_loop_poles,
         open_loop_zeros=report.zeros,
     )
-

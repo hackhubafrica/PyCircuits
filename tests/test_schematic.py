@@ -11,9 +11,24 @@ from pycircuits_sim.schematic import (
 class SchematicNetlistTests(unittest.TestCase):
     def make_rc_schematic(self):
         nodes = [
-            {"id": "V1", "kind": "voltage_source", "component": {"name": "V1", "type": "voltage_source", "value": 5.0}, "position": [100, 100]},
-            {"id": "R1", "kind": "resistor", "component": {"name": "R1", "type": "resistor", "value": 1000.0}, "position": [300, 100]},
-            {"id": "C1", "kind": "capacitor", "component": {"name": "C1", "type": "capacitor", "value": 1e-6}, "position": [500, 100]},
+            {
+                "id": "V1",
+                "kind": "voltage_source",
+                "component": {"name": "V1", "type": "voltage_source", "value": 5.0},
+                "position": [100, 100],
+            },
+            {
+                "id": "R1",
+                "kind": "resistor",
+                "component": {"name": "R1", "type": "resistor", "value": 1000.0},
+                "position": [300, 100],
+            },
+            {
+                "id": "C1",
+                "kind": "capacitor",
+                "component": {"name": "C1", "type": "capacitor", "value": 1e-6},
+                "position": [500, 100],
+            },
             {"id": "GND", "kind": "ground", "component": None, "position": [500, 300]},
             {"id": "J1", "kind": "junction", "component": None, "position": [200, 300]},
         ]
@@ -65,7 +80,12 @@ class SchematicNetlistTests(unittest.TestCase):
 
     def test_unconnected_and_ungrounded_components_are_rejected(self) -> None:
         nodes = [
-            {"id": "R1", "kind": "resistor", "component": default_component("resistor", "R1"), "position": [0, 0]},
+            {
+                "id": "R1",
+                "kind": "resistor",
+                "component": default_component("resistor", "R1"),
+                "position": [0, 0],
+            },
             {"id": "GND", "kind": "ground", "component": None, "position": [200, 0]},
         ]
         with self.assertRaisesRegex(ValueError, "unconnected terminal"):
@@ -80,7 +100,14 @@ class SchematicNetlistTests(unittest.TestCase):
             validate_editor_netlist(nodes, wires, 1e-6, 0.001)
 
     def test_ground_is_required(self) -> None:
-        nodes = [{"id": "R1", "kind": "resistor", "component": default_component("resistor", "R1"), "position": [0, 0]}]
+        nodes = [
+            {
+                "id": "R1",
+                "kind": "resistor",
+                "component": default_component("resistor", "R1"),
+                "position": [0, 0],
+            }
+        ]
         with self.assertRaisesRegex(ValueError, "ground symbol"):
             validate_editor_netlist(nodes, [], 1e-6, 0.001)
 

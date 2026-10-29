@@ -13,9 +13,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..ir import IrMixin
 from ..linear_systems import StateSpaceModel
 from .plant import normalize_plant, require_continuous
-from ..ir import IrMixin
 
 TOL = 1e-9
 
@@ -69,31 +69,24 @@ def analyze_stability(model: StateSpaceModel) -> StabilityReport:
     elif rhp_poles:
         bibo_reason = "BIBO unstable: at least one pole has a positive real part."
     elif repeated_jw or origin_pole:
-        bibo_reason = (
-            "Not BIBO stable: pole(s) on the imaginary axis (including integrators)."
-        )
+        bibo_reason = "Not BIBO stable: pole(s) on the imaginary axis (including integrators)."
     else:
         bibo_reason = "Not BIBO stable: poles must lie in the open left half-plane."
 
     lyapunov_as = bool(np.all(eig_re < -TOL)) if eigenvalues.size else True
     if lyapunov_as:
         lyap_reason = (
-            "Asymptotically stable (Lyapunov): all eigenvalues of A have "
-            "negative real parts."
+            "Asymptotically stable (Lyapunov): all eigenvalues of A have negative real parts."
         )
     elif np.any(eig_re > TOL):
         lyap_reason = "Lyapunov unstable: A has an eigenvalue with positive real part."
     else:
-        lyap_reason = (
-            "Not asymptotically stable: A has eigenvalue(s) on the imaginary axis."
-        )
+        lyap_reason = "Not asymptotically stable: A has eigenvalue(s) on the imaginary axis."
 
     return StabilityReport(
         poles=report.poles,
         zeros=report.zeros,
-        eigenvalues=tuple(
-            sorted(eigenvalues.tolist(), key=lambda z: (z.real, z.imag))
-        ),
+        eigenvalues=tuple(sorted(eigenvalues.tolist(), key=lambda z: (z.real, z.imag))),
         bibo_stable=bibo_stable,
         bibo_reason=bibo_reason,
         lyapunov_asymptotic=lyapunov_as,

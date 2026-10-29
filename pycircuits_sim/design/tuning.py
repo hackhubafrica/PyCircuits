@@ -15,16 +15,16 @@ controller designs.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
 from ..analysis.margins import bode_margins
 from ..analysis.plant import normalize_plant, require_continuous, require_siso
-from ..linear_systems import StateSpaceModel, simulate_state_space
 from ..ir import IrMixin
+from ..linear_systems import StateSpaceModel, simulate_state_space
 
 
 @dataclass(frozen=True)
@@ -96,15 +96,11 @@ def _ultimate_variants(ku: float, pu: float) -> dict[str, PIDGains]:
     return {
         "P": PIDGains(0.5 * ku, 0.0, 0.0),
         "PI": PIDGains(0.45 * ku, 0.45 * ku / (pu / 1.2), 0.0),
-        "PID": PIDGains(
-            0.6 * ku, 0.6 * ku / (pu / 2.0), 0.6 * ku * (pu / 8.0)
-        ),
+        "PID": PIDGains(0.6 * ku, 0.6 * ku / (pu / 2.0), 0.6 * ku * (pu / 8.0)),
     }
 
 
-def _reaction_curve_variants(
-    gain: float, tau: float, theta: float
-) -> dict[str, PIDGains]:
+def _reaction_curve_variants(gain: float, tau: float, theta: float) -> dict[str, PIDGains]:
     k_p = 1.2 * tau / (gain * theta)
     t_i = 2.0 * theta
     t_d = 0.5 * theta
@@ -135,9 +131,7 @@ def _reaction_curve_fit(model: StateSpaceModel) -> FopdtFit | None:
     stop_time = float(np.clip(10.0 * slowest_time_constant, 2.0, 1.0e4))
     time_step = stop_time / 1500.0
     try:
-        result = simulate_state_space(
-            model, time_step, stop_time, lambda _t: (1.0,)
-        )
+        result = simulate_state_space(model, time_step, stop_time, lambda _t: (1.0,))
     except ValueError:
         return None
     times = np.asarray(result.time, dtype=float)
@@ -268,9 +262,7 @@ def ackermann_gain(
     order = A.shape[0]
     poles = np.asarray(desired_poles, dtype=complex)
     if poles.size != order:
-        raise ValueError(
-            f"provide exactly {order} desired poles for this plant (order {order})"
-        )
+        raise ValueError(f"provide exactly {order} desired poles for this plant (order {order})")
     if B.ndim != 2 or B.shape[1] != 1:
         raise ValueError("ackermann placement supports SISO plants only")
     controllability = _controllability_matrix(A, B)
@@ -285,26 +277,18 @@ def ackermann_gain(
     # desired[1:] = [a_{n-1}, ..., a_0] feeds Horner in descending order.
     desired = np.poly(poles)
     try:
-        placed = np.linalg.solve(
-            controllability, _matrix_polynomial(A, desired[1:])
-        )
+        placed = np.linalg.solve(controllability, _matrix_polynomial(A, desired[1:]))
     except np.linalg.LinAlgError as error:
-        raise ValueError(
-            "controllability matrix is singular; cannot place poles"
-        ) from error
+        raise ValueError("controllability matrix is singular; cannot place poles") from error
     gain = placed[-1, :]
     if np.iscomplexobj(gain) and float(np.max(np.abs(np.imag(gain)))) > 1e-9:
-        raise ValueError(
-            "desired poles must be conjugate symmetric so K stays real"
-        )
+        raise ValueError("desired poles must be conjugate symmetric so K stays real")
     # Row vector (1 x n) so matrix algebra reads A - B @ K.
     gain = np.real(gain).astype(float).reshape((1, order))
     return gain, rank
 
 
-def tune_pole_placement(
-    model: StateSpaceModel, desired_poles: Sequence[complex]
-) -> TuneResult:
+def tune_pole_placement(model: StateSpaceModel, desired_poles: Sequence[complex]) -> TuneResult:
     """Place closed-loop poles with state feedback; map to PID when possible.
 
     Computes K with Ackermann's formula after a controllability check. For a
@@ -339,8 +323,7 @@ def tune_pole_placement(
         message=(
             "State-feedback K from Ackermann's formula. "
             + (
-                f"{label} gains matched to a 2nd-order plant with "
-                f"{poles.size} desired poles."
+                f"{label} gains matched to a 2nd-order plant with {poles.size} desired poles."
                 if pid_gains
                 else "Use K for state feedback; PID/PD mapping is only "
                 "available for 2nd-order SISO plants with 2 (PD) or 3 (PID) "
@@ -350,9 +333,7 @@ def tune_pole_placement(
     )
 
 
-def _pid_from_second_order(
-    model: StateSpaceModel, poles: np.ndarray
-) -> PIDGains | None:
+def _pid_from_second_order(model: StateSpaceModel, poles: np.ndarray) -> PIDGains | None:
     """Match PID (3 poles) or PD (2 poles) on G(s) = b / (s^2 + a1 s + a0)."""
     if poles.size not in (2, 3):
         return None
@@ -384,5 +365,3 @@ def _pid_from_second_order(
         return PIDGains(float(kp), float(ki), float(kd))
     except ValueError:
         return None
-
-

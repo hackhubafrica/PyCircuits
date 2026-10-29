@@ -35,7 +35,6 @@ def require_control():
     control = try_import_control()
     if control is None:
         raise ValueError(
-            "python-control is not installed; install the optional extra with: "
-            + INSTALL_HINT
+            "python-control is not installed; install the optional extra with: " + INSTALL_HINT
         )
     return control

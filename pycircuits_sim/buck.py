@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
+
 from .ir import IrMixin
 
 
 def _step_count(stop_time: float, time_step: float) -> int:
     ratio = stop_time / time_step
     nearest_integer = round(ratio)
-    if nearest_integer > 0 and math.isclose(
-        ratio, nearest_integer, rel_tol=1e-12, abs_tol=0.0
-    ):
+    if nearest_integer > 0 and math.isclose(ratio, nearest_integer, rel_tol=1e-12, abs_tol=0.0):
         return nearest_integer
     return math.ceil(ratio)
 
@@ -51,9 +50,7 @@ class BuckConfig(IrMixin):
         }
         for name, value in nonnegative_values.items():
             if not math.isfinite(value) or value < 0:
-                raise ValueError(
-                    f"{name} must be a finite value greater than or equal to zero"
-                )
+                raise ValueError(f"{name} must be a finite value greater than or equal to zero")
 
         if not math.isfinite(self.duty_cycle) or not 0 <= self.duty_cycle <= 1:
             raise ValueError("duty_cycle must be between zero and one")
@@ -97,12 +94,9 @@ class BuckPlant:
         determinant = 1.0 + load_term + inductance_scale * capacitance_scale
 
         next_current = (
-            source_current * (1.0 + load_term)
-            - inductance_scale * self.output_voltage
+            source_current * (1.0 + load_term) - inductance_scale * self.output_voltage
         ) / determinant
-        next_voltage = (
-            self.output_voltage + capacitance_scale * source_current
-        ) / determinant
+        next_voltage = (self.output_voltage + capacitance_scale * source_current) / determinant
 
         if not switch_on and next_current < 0:
             next_current = 0.0

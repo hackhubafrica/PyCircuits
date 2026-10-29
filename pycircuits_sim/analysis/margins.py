@@ -11,16 +11,16 @@ degrees, crossover frequencies rad/s. Educational tool.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
+from ..ir import IrMixin
 from ..linear_systems import StateSpaceModel
 from ..optional import try_import_control
 from .plant import require_continuous, require_siso
-from ..ir import IrMixin
 
 MIN_DECIBELS = -320.0
 
@@ -52,9 +52,7 @@ def _finite(value) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def _interpolated_crossing(
-    grid: np.ndarray, values: np.ndarray, level: float
-) -> float | None:
+def _interpolated_crossing(grid: np.ndarray, values: np.ndarray, level: float) -> float | None:
     """First grid interval crossing ``level``; interpolate in log of grid.
 
     Requires a strict sign change across the interval (a value that merely
@@ -70,9 +68,7 @@ def _interpolated_crossing(
                 continue
             fraction = a / (a - b)
             log_grid = np.log(grid[index : index + 2])
-            return float(
-                math.exp(log_grid[0] + fraction * (log_grid[1] - log_grid[0]))
-            )
+            return float(math.exp(log_grid[0] + fraction * (log_grid[1] - log_grid[0])))
     return None
 
 
@@ -147,8 +143,7 @@ def bode_margins(
             or np.any(frequencies <= 0)
         ):
             raise ValueError(
-                "frequencies_rad_s must be an increasing sequence of "
-                "positive finite values"
+                "frequencies_rad_s must be an increasing sequence of positive finite values"
             )
 
     A = np.asarray(model.A, dtype=float)
@@ -162,13 +157,9 @@ def bode_margins(
         try:
             transfer = C @ np.linalg.solve(1j * frequency * identity - A, B) + D
         except np.linalg.LinAlgError as error:
-            raise ValueError(
-                f"frequency response solve failed at {frequency:g} rad/s"
-            ) from error
+            raise ValueError(f"frequency response solve failed at {frequency:g} rad/s") from error
         value = complex(transfer.item())
-        magnitude_db.append(
-            max(MIN_DECIBELS, 20.0 * math.log10(max(abs(value), 1e-16)))
-        )
+        magnitude_db.append(max(MIN_DECIBELS, 20.0 * math.log10(max(abs(value), 1e-16))))
         phase_deg.append(math.degrees(math.atan2(value.imag, value.real)))
 
     unwrapped = np.degrees(np.unwrap(np.radians(np.asarray(phase_deg))))
@@ -190,4 +181,3 @@ def bode_margins(
         gain_crossover_rad_s=wcg,
         phase_crossover_rad_s=wcp,
     )
-
