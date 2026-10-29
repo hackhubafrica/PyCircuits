@@ -238,6 +238,7 @@ def _collect_registry() -> dict[str, type]:
         "pycircuits_sim.linear_systems",
         "pycircuits_sim.metrics",
         "pycircuits_sim.mna",
+        "pycircuits_sim.signal",
         "pycircuits_sim.sweep",
     )
     registry: dict[str, type] = {}

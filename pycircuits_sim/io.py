@@ -12,6 +12,7 @@ from .block_diagram import BlockDiagramDocument, BlockDiagramEdge, BlockDiagramN
 from .buck import BuckConfig, SimulationResult
 from .closed_loop import ClosedLoopConfig, ClosedLoopResult, PIDConfig, ReferenceStep
 from .design import PIDGains
+from .signal import FilterSpec
 from .design.state_feedback import StateFeedbackResult
 from .interconnect import InterconnectBlock, InterconnectSpec
 from .metrics import RunMetrics
@@ -408,3 +409,37 @@ def write_mna_csv(result: CircuitResult, path: str | Path) -> None:
             row.extend(trace[index] for trace in result.component_currents.values())
             row.extend(trace[index] for trace in result.switch_states.values())
             writer.writerow(row)
+
+def load_filter_spec(path: str | Path) -> FilterSpec:
+    """Load a filter specification from a JSON file.
+
+    Expected shape:
+        {"filter_type": "butterworth", "kind": "lowpass",
+         "order": 4, "cutoff_rad_s": 100.0, "ripple_db": 1.0}
+    """
+    with Path(path).open(encoding="utf-8") as config_file:
+        data = json.load(config_file)
+    if not isinstance(data, dict):
+        raise ValueError("filter specification JSON must contain an object")
+    if not {"filter_type", "kind", "order", "cutoff_rad_s"}.issubset(data):
+        raise ValueError(
+            "filter spec requires filter_type, kind, order, and cutoff_rad_s"
+        )
+    return FilterSpec(**data)
+
+
+def load_fit_data(path: str | Path) -> dict:
+    """Load frequency-response data from a JSON file.
+
+    Expected shape:
+        {"frequencies_rad_s": [...], "response": [[re, im], ...]}
+
+    ``response`` entries are [real, imag] pairs for JSON compatibility.
+    """
+    with Path(path).open(encoding="utf-8") as config_file:
+        data = json.load(config_file)
+    if not isinstance(data, dict):
+        raise ValueError("fit data JSON must contain an object")
+    if not {"frequencies_rad_s", "response"}.issubset(data):
+        raise ValueError("fit data requires frequencies_rad_s and response")
+    return data

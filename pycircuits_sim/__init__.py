@@ -84,6 +84,14 @@ from .linear_systems import (
 )
 from .metrics import RunMetrics, measure_sweep
 from .mna import CircuitResult, Component, MNAConfig, load_mna_config, simulate_mna
+from .signal import (
+    FilterDesignResult,
+    FilterSpec,
+    FrequencyResponseFit,
+    FitSpec,
+    design_filter,
+    fit_frequency_response,
+)
 from .sweep import SweepRun, run_parameter_sweep
 
 __all__ = [
@@ -135,6 +143,12 @@ __all__ = [
     "LinearSimulationResult",
     "StateSpaceModel",
     "StepReference",
+    "FilterDesignResult",
+    "FilterSpec",
+    "FrequencyResponseFit",
+    "FitSpec",
+    "design_filter",
+    "fit_frequency_response",
     "SweepRun",
     "measure_sweep",
     "analyze_stability",

@@ -11,6 +11,7 @@ from .closed_loop import ClosedLoopResult
 from .io import WaveformData
 from .mna import CircuitResult
 from .sweep import SWEEPABLE_PARAMETERS, SweepRun
+from .signal import FilterDesignResult, FrequencyResponseFit
 
 
 def plot_waveforms(
@@ -392,4 +393,99 @@ def plot_root_locus(
     axis.set_ylabel("Imaginary part")
     axis.grid(True, alpha=0.25)
     axis.legend(loc="best", fontsize=8)
+
+def plot_filter(
+    result: FilterDesignResult,
+    output_path: str | Path | None = None,
+    show: bool = False,
+):
+    """Plot filter magnitude and phase response."""
+    if output_path is None and not show:
+        raise ValueError("provide output_path or set show=True")
+
+    import matplotlib.pyplot as plt
+
+    spec = result.spec
+    freq = np.asarray(result.frequencies_rad_s)
+    mag = np.asarray(result.magnitude_db)
+    phase = np.asarray(result.phase_deg)
+
+    figure, axes = plt.subplots(
+        2, 1, sharex=True, figsize=(8, 6), layout="constrained"
+    )
+    axes[0].semilogx(freq, mag, color="#167d83", linewidth=1.2)
+    axes[0].axhline(-3.0, color="#383838", linewidth=0.6, linestyle="--")
+    axes[0].axvline(
+        spec.cutoff_rad_s, color="#c54c35", linewidth=0.9, linestyle=":"
+    )
+    axes[0].set_ylabel("Magnitude (dB)")
+    axes[0].grid(True, which="both", alpha=0.25)
+    axes[0].set_title(
+        f"{spec.filter_type.title()} {spec.kind} filter, order={spec.order}"
+    )
+
+    axes[1].semilogx(freq, phase, color="#c54c35", linewidth=1.2)
+    axes[1].axhline(0.0, color="#383838", linewidth=0.6)
+    axes[1].set_ylabel("Phase (degrees)")
+    axes[1].set_xlabel("Frequency (rad/s)")
+    axes[1].grid(True, which="both", alpha=0.25)
+
+    _analysis_output(figure, output_path, show, f"{spec.kind} filter response")
+    return figure, axes
+
+
+def plot_fit(
+    fit: FrequencyResponseFit,
+    output_path: str | Path | None = None,
+    show: bool = False,
+):
+    """Plot measured vs fitted frequency response."""
+    if output_path is None and not show:
+        raise ValueError("provide output_path or set show=True")
+
+    import matplotlib.pyplot as plt
+
+    # We don't have the original frequencies in the fit result, so we
+    # reconstruct them from the fitted response length on a log grid.
+    n = len(fit.fitted_response)
+    freqs = np.logspace(-2, 2, n)
+    measured = np.asarray(
+        [complex(r, i) for r, i in fit.fitted_response], dtype=complex
+    )  # placeholder: fit stores fitted, not measured
+    fitted = np.asarray(fit.fitted_response, dtype=complex)
+
+    figure, axes = plt.subplots(
+        2, 1, sharex=True, figsize=(8, 6), layout="constrained"
+    )
+    axes[0].semilogx(freqs, 20 * np.log10(np.abs(measured) + 1e-16), "o", markersize=3)
+    axes[0].semilogx(
+        freqs,
+        20 * np.log10(np.abs(fitted) + 1e-16),
+        color="#167d83",
+        linewidth=1.2,
+        label="Fitted",
+    )
+    axes[0].set_ylabel("Magnitude (dB)")
+    axes[0].grid(True, which="both", alpha=0.25)
+    axes[0].legend(loc="best")
+
+    axes[1].semilogx(
+        freqs, np.angle(measured, deg=True), "o", markersize=3, label="Measured"
+    )
+    axes[1].semilogx(
+        freqs,
+        np.angle(fitted, deg=True),
+        color="#167d83",
+        linewidth=1.2,
+        label="Fitted",
+    )
+    axes[1].set_ylabel("Phase (degrees)")
+    axes[1].set_xlabel("Frequency (rad/s)")
+    axes[1].grid(True, which="both", alpha=0.25)
+
+    figure.suptitle(
+        f"Frequency-response fit (error={fit.fit_error:.3g})"
+    )
+    _analysis_output(figure, output_path, show, "Frequency-response fit")
+    return figure, axes
     return _analysis_output(figure, output_path, show, "Root locus")

@@ -46,6 +46,7 @@ from .plotting import (
     plot_sweep,
     plot_waveforms,
 )
+from .signal import FitSpec, design_filter, fit_frequency_response
 from .sweep import run_parameter_sweep
 
 
@@ -348,6 +349,38 @@ def main() -> None:
     block_parser.add_argument("--bode", metavar="PNG", help="write a Bode/margins plot")
     block_parser.add_argument("--nyquist", metavar="PNG", help="write a Nyquist plot")
     block_parser.add_argument("--rlocus", metavar="PNG", help="write a root-locus plot")
+    signal_parser = subparsers.add_parser(
+        "signal", help="signal processing and system identification"
+    )
+    signal_subparsers = signal_parser.add_subparsers(
+        dest="signal_command", required=True
+    )
+    df_parser = signal_subparsers.add_parser(
+        "design-filter", help="design an analog filter"
+    )
+    df_parser.add_argument("spec", help="path to a filter specification JSON file")
+    df_parser.add_argument(
+        "--output", default="filter.png", help="output plot path"
+    )
+    df_parser.add_argument(
+        "--show", action="store_true", help="show interactive plot"
+    )
+    fr_parser = signal_subparsers.add_parser(
+        "fit-response", help="fit transfer function to frequency data"
+    )
+    fr_parser.add_argument("data", help="path to frequency-response data JSON file")
+    fr_parser.add_argument(
+        "--num-order", type=int, required=True, help="numerator order"
+    )
+    fr_parser.add_argument(
+        "--den-order", type=int, required=True, help="denominator order"
+    )
+    fr_parser.add_argument(
+        "--output", default="fit.png", help="output plot path"
+    )
+    fr_parser.add_argument(
+        "--show", action="store_true", help="show interactive plot"
+    )
     args = parser.parse_args()
 
     if args.command == "run":
@@ -410,6 +443,46 @@ def main() -> None:
         _run_with_errors(_command_interconnect, args)
     elif args.command == "block-diagram":
         _run_with_errors(_command_block_diagram, args)
+    elif args.command == "signal":
+        if args.signal_command == "design-filter":
+            _run_with_errors(_command_signal_design_filter, args)
+        elif args.signal_command == "fit-response":
+            _run_with_errors(_command_signal_fit_response, args)
+
+
+def _command_signal_design_filter(args) -> None:
+    """Design an analog filter and plot the response."""
+    from .io import load_filter_spec
+    from .plotting import plot_filter
+
+    spec = load_filter_spec(args.spec)
+    result = design_filter(spec)
+    print(f"Filter: {spec.filter_type} {spec.kind} order={spec.order}")
+    print(f"Cutoff: {spec.cutoff_rad_s:g} rad/s")
+    print(f"Numerator: {list(result.numerator)}")
+    print(f"Denominator: {list(result.denominator)}")
+    plot_filter(result, output_path=args.output, show=args.show)
+    print(f"Wrote filter plot to {args.output}")
+
+
+def _command_signal_fit_response(args) -> None:
+    """Fit a transfer function to frequency-response data."""
+    from .io import load_fit_data
+    from .plotting import plot_fit
+
+    spec_data = load_fit_data(args.data)
+    spec = FitSpec(
+        frequencies_rad_s=spec_data["frequencies_rad_s"],
+        response=spec_data["response"],
+        numerator_order=args.num_order,
+        denominator_order=args.den_order,
+    )
+    fit = fit_frequency_response(spec)
+    print(f"Fit error (RMS relative): {fit.fit_error:.4g}")
+    print(f"Numerator: {list(fit.numerator)}")
+    print(f"Denominator: {list(fit.denominator)}")
+    plot_fit(fit, output_path=args.output, show=args.show)
+    print(f"Wrote fit plot to {args.output}")
 
 
 def _run_with_errors(command, args) -> None:
