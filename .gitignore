@@ -11,3 +11,14 @@ frontend/dist/
 .DS_Store
 .claude
 .agents
+
+# OpenModelica build artifacts & virtualenvs
+OpenModelicaFiles/venv/
+OpenModelicaFiles/lin_build/
+OpenModelicaFiles/plant_build/
+OpenModelicaFiles/PlantHILProject/.pio/
+OpenModelicaFiles/PlantHILProject/.pioenvs/
+OpenModelicaFiles/*.mo~
+
+# Simulation outputs
+outputs/

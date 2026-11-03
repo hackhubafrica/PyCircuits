@@ -54,6 +54,12 @@ from collections.abc import Mapping
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any, Union, get_args, get_origin
 
+try:
+    import pyarrow as pa  # type: ignore[import-not-found]
+    HAS_ARROW = True
+except ImportError:
+    HAS_ARROW = False
+
 __all__ = [
     "IR_VERSION",
     "IrError",
@@ -65,6 +71,8 @@ __all__ = [
     "registry",
     "to_ir",
     "validate_ir",
+    "to_arrow",
+    "from_arrow",
 ]
 
 IR_VERSION = "1.0"
@@ -614,3 +622,62 @@ def validate_ir(payload: Mapping[str, Any]) -> None:
 def dumps_ir(value: Any, *, indent: int | None = 2) -> str:
     """Serialize a value to an IR JSON string."""
     return json.dumps(to_ir(value), indent=indent, allow_nan=False)
+
+
+def to_arrow(value: Any, *, indent: int | None = 2) -> bytes:
+    """Serialize a value to an Arrow IPC format bytes object.
+    
+    This provides a language-neutral, columnar format for zero-copy
+    data sharing between Python, Rust, and Julia runtimes.
+    
+    Args:
+        value: Any PyCircuits result dataclass supporting to_ir()
+        indent: Indentation for debugging (default 2)
+    
+    Returns:
+        bytes: Arrow IPC format payload
+    
+    Raises:
+        ImportError: If pyarrow is not installed
+        IrError: If the value cannot be converted to IR
+    """
+    if not HAS_ARROW:
+        raise ImportError(
+            "pyarrow is not installed; install with: pip install 'pycircuits-sim[arrow]'"
+        )
+    ir_doc = to_ir(value)
+    # Convert IR dict to Python types that Arrow can handle
+    table = pa.table({"ir": [ir_doc]})
+    buf = pa.BufferOutputStream()
+    writer = pa.ipc.new_file(buf, table.schema)
+    writer.write_table(table)
+    return buf.getvalue().to_pybytes()
+
+
+def from_arrow(payload: bytes) -> dict:
+    """Deserialize an Arrow IPC format payload back to an IR dict.
+    
+    Args:
+        payload: bytes from to_arrow()
+    
+    Returns:
+        dict: IR document dict compatible with from_ir()
+    
+    Raises:
+        ImportError: If pyarrow is not installed
+        IrError: If the payload cannot be deserialized
+    """
+    if not HAS_ARROW:
+        raise ImportError(
+            "pyarrow is not installed; install with: pip install 'pycircuits-sim[arrow]'"
+        )
+    try:
+        reader = pa.ipc.open_file(pa.pybuffer(payload))
+        table = reader.read_all()
+        # Return the first table's rows as a dict
+        records = [dict(zip(table.column_names, row)) for row in table.to_pydantic()]
+        if not records:
+            raise IrError("Empty Arrow payload")
+        return records[0]
+    except Exception as e:
+        raise IrError(f"Failed to deserialize Arrow payload: {e}") from e

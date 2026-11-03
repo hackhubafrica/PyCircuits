@@ -1,0 +1,15 @@
+model RCCircuit
+  // Parameters
+  parameter Real R = 10.0 "Resistance in Ohms";
+  parameter Real C = 0.001 "Capacitance in Farads";
+  parameter Real V_in = 5.0 "Step input voltage in Volts";
+
+  // Variables and States
+  Real v_c(start=0.0) "Capacitor voltage state";
+  Real i(start=0.5) "Circuit current";
+
+equation
+  // Differential-Algebraic Equations (DAEs)
+  i = (V_in - v_c) / R;
+  C * der(v_c) = i;
+end RCCircuit;
