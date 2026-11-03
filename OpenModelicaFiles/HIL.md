@@ -54,8 +54,8 @@ to 115200 baud. Close any other program using the device's serial port.
   calculate an automatic stable step.
 - ESP32 floating-point arithmetic uses `float`; very large or poorly scaled
   state-space coefficients may be inaccurate or exceed MCU range.
-- Firmware starts every state at zero; a nonzero Modelica operating point is
-  not currently carried into the generated model header.
+- Firmware starts from the linearizer's `x0` vector when present; a model
+  without `x0` starts at zero.
 - Nonlinear equations, implicit DAEs, discrete events, arbitrary Modelica
   components, and models with multiple inputs/outputs are not currently
   deployable through this workflow.

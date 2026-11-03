@@ -23,7 +23,7 @@ artifacts.
 | `observe_plant_states.py` | Parse + plot all 4 closed-loop states on subplots |
 | `TF.py` | Load model via OMPython, linearize, print ABCD matrices |
 | `modelica_parser.py` | Shared parser: `parse_linearized_model()` used by all scripts above |
-| `modelica_workflow.py` | Validate a linearized SISO `.mo` model, generate ESP32 headers, build/upload firmware, or monitor telemetry |
+| `modelica_workflow.py` | Linearize, validate, simulate, and deploy supported SISO `.mo` models; monitor ESP32 telemetry |
 | `esp32_demo.mo` | Deployable one-state state-space example |
 | `PlantHILProject/` | PlatformIO ESP32 firmware project for HIL deployment |
 | `ESP32HILProject/` | Older PlatformIO scaffold; not used by the current workflow |
@@ -37,9 +37,9 @@ artifacts.
 
 1. **Python 3.10+** and the project installed in editable mode:
    `python -m pip install -e .`
-2. **PlatformIO Core** (`pio`) for ESP32 build/upload
-3. **OpenModelica** (`omc`) for the optional `--omc-check` and legacy
+2. **OpenModelica** (`omc`) for automatic model linearization and the legacy
    desktop compile/linearize scripts
+3. **PlatformIO Core** (`pio`) for ESP32 build/upload
 4. **pyserial** for telemetry monitoring:
 ```sh
 python -m pip install -e ".[hardware]"
@@ -52,7 +52,7 @@ OMPython is only needed by the legacy scripts that use `OMCSessionLocal`.
 Use OMEdit for graphical Modelica authoring. See [BUILD.md](BUILD.md) for
 model creation, linearization, and the MCU-supported state-space contract.
 `esp32_demo.mo` demonstrates the required numeric `A`, `B`, `C`, and `D`
-matrices. Validate it from the repository root:
+matrices. Validate and simulate it from the repository root:
 
 ```sh
 python -m OpenModelicaFiles.modelica_workflow validate \
@@ -68,6 +68,17 @@ Build firmware without uploading:
 python -m OpenModelicaFiles.modelica_workflow deploy \
   --model OpenModelicaFiles/esp32_demo.mo --mode virtual
 ```
+
+For your OMEdit plant, first export its operating-point linearization:
+
+```sh
+python -m OpenModelicaFiles.modelica_workflow linearize \
+  --model path/to/MyPlant.mo --model-class MyPlant \
+  --output outputs/MyPlant_linearized.mo
+```
+
+Then use `outputs/MyPlant_linearized.mo` in the validate/simulate/deploy
+commands above.
 
 Upload only when explicitly requested and after selecting the correct port:
 
@@ -107,10 +118,15 @@ This loads the linearized state-space matrices from `linearized_model.mo` and pl
 ### Linearize a model
 
 ```sh
-python define_plant_model.py
+python -m OpenModelicaFiles.modelica_workflow linearize \
+  --model path/to/MyPlant.mo \
+  --model-class MyPlant \
+  --output outputs/MyPlant_linearized.mo
 ```
 
-Linearizes `MassSpringDamperPlant`, moves artifacts into `lin_build/`, and syncs core files to `PlantHILProject/src/`.
+This is the supported automated export. `define_plant_model.py` is a legacy
+artifact organizer with a historical model filename; use the workflow above
+for current OMEdit models.
 
 ## Architecture at a glance
 
@@ -118,45 +134,39 @@ Linearizes `MassSpringDamperPlant`, moves artifacts into `lin_build/`, and syncs
 Authoring Layer (.mo files)
         │
         ▼
-Rumoca Parser & Compiler (OpenModelica)
+OpenModelica linearize() → numeric A/B/C/D/x0
         │
         ▼
-Flattened DAE IR → C Code Generation
+Python validation / RK4 simulation → portable C++ matrices
         │
         ▼
-Zero-Copy Data Bridge (Apache Arrow / FFI)
+PlatformIO → ESP32 virtual-plant / configured ADC-PWM
         │
         ▼
-Python / Julia Numeric Layer (NumPy, SciPy, DiffEq.jl)
-        │
-        ▼
-Hardware & Deployment Layer (ESP32 via PlatformIO)
+JSON-lines telemetry → Python host
 ```
 
 | Layer | What it does | Detail page |
 |-------|-------------|-------------|
-| Authoring | Write `.mo` Modelica models | — |
-| Compiler | Flatten DAEs, generate C | [BUILD.md](BUILD.md) |
-| Data bridge | Zero-copy between languages | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Numeric | Analyze, simulate, plot in Python | [BUILD.md](BUILD.md) |
-| Hardware | Flash to ESP32, HIL loops | [HIL.md](HIL.md) |
-| Telemetry | Stream state from ESP32 to host | [TELEMETRY.md](TELEMETRY.md) |
+| Authoring | Graphical Modelica models in OMEdit | [BUILD.md](BUILD.md) |
+| Linearization | OpenModelica `linearize()` exports numeric state space | [BUILD.md](BUILD.md) |
+| Numeric | Validate/simulate supported SISO state space in Python | [BUILD.md](BUILD.md) |
+| Hardware | Build and explicitly upload supported model firmware | [HIL.md](HIL.md) |
+| Telemetry | JSON-lines state stream and virtual-input command | [TELEMETRY.md](TELEMETRY.md) |
 
 ## Common workflows
 
 | Task | Command | Detail page |
 |------|---------|-------------|
 | Validate a deployable Modelica model | `python -m OpenModelicaFiles.modelica_workflow validate --model OpenModelicaFiles/esp32_demo.mo` | [BUILD.md](BUILD.md) |
+| Linearize an OMEdit model | `python -m OpenModelicaFiles.modelica_workflow linearize --model path/to/Plant.mo --model-class Plant --output outputs/Plant_linearized.mo` | [BUILD.md](BUILD.md) |
 | Simulate a model and save CSV | `python -m OpenModelicaFiles.modelica_workflow simulate --model OpenModelicaFiles/esp32_demo.mo` | [BUILD.md](BUILD.md) |
 | Build ESP32 firmware without upload | `python -m OpenModelicaFiles.modelica_workflow deploy --model OpenModelicaFiles/esp32_demo.mo` | [BUILD.md](BUILD.md) |
 | Flash firmware | Add `--upload --port /dev/ttyUSB0` to deploy command | [HIL.md](HIL.md) |
 | Stream ESP32 telemetry | `python -m OpenModelicaFiles.modelica_workflow monitor --port /dev/ttyUSB0` | [TELEMETRY.md](TELEMETRY.md) |
 | Compile desktop Modelica artifacts | `python OpenModelicaFiles/compile-plant.py` from its folder | [BUILD.md](BUILD.md) |
-| Linearize a model | `python define_plant_model.py` | [BUILD.md](BUILD.md) |
 | Parse state-space matrices | `from modelica_parser import parse_linearized_model` | [modelica_parser.py](modelica_parser.py) |
 | Simulate closed-loop PID | `python dynamic_model.py` | — |
-| Flash firmware to ESP32 | `pio run -t upload` (in `PlantHILProject/`) | [HIL.md](HIL.md) |
-| Stream telemetry from ESP32 | `python -m OpenModelicaFiles.modelica_workflow monitor --port /dev/ttyUSB0` | [TELEMETRY.md](TELEMETRY.md) |
 | Model visually in OMEdit | Open `plant.mo` or create new model, run transient | [BUILD.md](BUILD.md) |
 
 ## Documentation

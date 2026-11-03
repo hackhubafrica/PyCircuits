@@ -13,35 +13,51 @@ Multi-tier architecture for the OpenModelica physical modeling layer.
 
 The suite replaces proprietary graphical block diagrams (Simulink) with Modelica's text-based `.mo` files as the foundational physical modeling and authoring frontend. Modelica defines physical systems, multi-domain components (electrical, mechanical, thermal), and governing differential-algebraic equations (DAEs).
 
-## Layer stack
+## Implemented Modelica-to-ESP32 path
 
 ```text
-Authoring Layer (.mo Modelica Files)
+OMEdit graphical model (.mo)
         │
         ▼
-Rumoca Parser & Compiler Core
+OpenModelica linearize()
         │
         ▼
-Flattened DAE IR
+linearized .mo (A, B, C, D, x0)
         │
         ▼
-C Code Generation (via Jinja templates)
+Python validation + RK4 simulation
         │
         ▼
-Compiled Native Shared Library (.so / .dll)
+portable state-space C++ header
         │
         ▼
-ZERO-COPY DATA BRIDGE (Apache Arrow / FFI)
+PlatformIO / ESP32 (virtual plant or configured ADC/PWM)
         │
         ▼
-Shared In-Memory Buffer Pool
-        ├───────────────┬───────────────┐
-        ▼               ▼               ▼
-Python/Julia Layer   Event & Zero-Crossing   Hardware & Deployment
-(NumPy, SciPy,       Synchronization Engine    Layer
-DiffEq.jl)           (µs-accurate root-      (Microcontrollers,
-reads shared         finding for           HIL loops & PWM
-buffers instantly)   discrete switches)      PlatformIO/ESP32)
+JSON-lines telemetry + host monitor
+```
+
+The implemented path is limited to 1–16 state, continuous-time, numeric SISO
+linearizations. It carries the linearizer's initial state `x0` into both host
+simulation and firmware. See [BUILD.md](BUILD.md) for the automated
+`linearize` → validate → simulate/build workflow.
+
+## Long-term target architecture
+
+The following layers remain planned, not current implementation:
+
+```text
+Modelica/Julia frontends
+        │
+Rumoca / shared solver IR
+        │
+C / Rust / Julia execution backends
+        │
+FFI or shared-memory bridge
+        │
+cross-runtime hybrid event handling
+        │
+hardware deployment and telemetry
 ```
 
 ## Layer responsibilities
@@ -90,13 +106,17 @@ Microcontrollers executing HIL loops and PWM switching, flashed via PlatformIO. 
 
 ## Known architectural gaps
 
-| Gap | Impact | Recommended fix |
-|-----|--------|-----------------|
-| Real-time determinism / OS scheduling jitter | Millisecond-scale latency spikes destabilize high-frequency control loops (e.g., 20 kHz inverter = 50 µs period) | Strict hardware boundary: MCU handles hard real-time (PWM, fast PID, ADC); host handles soft real-time (tuning, logging, visualization) |
-| Steady-state initialization / homotopy solvers | Complex circuits fail to converge at $t=0$ due to algebraic loops and stiff systems | Automatic differentiation or analytical Jacobian generation in Rumoca |
-| Unified event handling across language boundaries | Discrete state transitions drift during numerical integration | Standardized event-root finder and zero-crossing locator |
-| Unified interactive workbench | Fragmented tool windows (Neovim, VS Code, Jupyter, PyQt/Streamlit) kill debugging productivity | Cohesive workspace protocol (LSP-like for scientific debugging) |
+| Gap | Impact | Planned stage and acceptance |
+|-----|--------|------------------------------|
+| Real-time determinism / OS scheduling jitter | The current Arduino `loop()` plus ADC, PWM, and telemetry is not a hard-real-time guarantee; jitter can break a 20 kHz / 50 µs deadline | **Stage 3: hardware bridge hardening.** Keep fast PWM/control on the MCU and host work soft real-time; later move the integration/control tick to an ESP32 hardware timer or pinned high-priority task, keep serial logging off the critical path, and measure worst-case execution time/jitter against an explicit deadline before claiming a rate. |
+| Steady-state initialization / homotopy solvers | Nonlinear DAEs and algebraic loops may fail to initialize; the current model uses OpenModelica `linearize()` and carries its `x0`, but does not implement a homotopy solver | **Stage 4: general Modelica frontend/runtime.** First surface OpenModelica initialization diagnostics and preserve its operating point; then support initialization equations/homotopy or a proven backend solver. Analytical Jacobians/automatic differentiation are an optimization after correctness tests for representative stiff/algebraic models. |
+| Unified event handling across language boundaries | Different solvers can locate zero crossings at different times and drift on hybrid systems | **Stages 4–5: shared solver/event runtime.** Define event surfaces, root tolerances, event priority, state reinitialization, and communication-step semantics in the IR; validate with cross-backend switching-system conformance traces before enabling multi-runtime HIL. |
+| Unified interactive workbench | Separate OMEdit, Streamlit, terminal, and telemetry windows fragment the workflow | **Stage 2 and Stage 7.** Build a general plant/controller graph editor against the existing UI/core first; later add LSP/Jupyter integration and a shared run/telemetry workspace. |
 
 ## Recommended next focus
 
-Prioritize the core compilation and execution loop first: solidify how Rust-lowered IR targets either a pure Julia execution block or a standalone C/Python extension module. Once data flows seamlessly from authoring layer down to hardware telemetry via PlatformIO, the rest of the ecosystem snaps into place naturally.
+Immediate focus is automated OpenModelica linearization export and verification
+of the supported ESP32 workflow. The next hardware stage is measured
+determinism—not claiming hard real time from the current Arduino loop. General
+DAE initialization and cross-runtime event synchronization belong to the
+later Modelica/runtime stages, after a shared solver contract exists.

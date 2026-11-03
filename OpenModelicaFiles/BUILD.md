@@ -20,22 +20,36 @@ when explicitly requested.
    An electrical plant needs its electrical Ground and appropriate sources
    and components. OMEdit shows the diagram and generated Modelica source for
    the same model.
-5. For MCU deployment, linearize the model around its operating point and
-   obtain numeric `A`, `B`, `C`, and `D` matrices. Put those values into a
-   state-space `.mo` file with equations of the form `der(x)=A*x+B*u` and
-   `y=C*x+D*u`. The required source format is demonstrated in
-   [esp32_demo.mo](esp32_demo.mo).
+5. For MCU deployment, expose one scalar input and output and linearize the
+   model around the desired operating point. The workflow calls OpenModelica
+   `linearize()`, finds its generated linearized `.mo`, checks that the result
+   fits the SISO state-space profile, and writes the artifact to your chosen
+   path. The output includes `A`, `B`, `C`, `D`, and (when emitted by OMC) `x0`.
 
-**Current boundary:** the workflow validates the state-space `.mo` export; it
-does not yet call OMEdit/OpenModelica to extract linearization matrices from an
-arbitrary graphical component model automatically. That automated
-linearization/export handoff is a remaining stage.
+For example, from the repository root:
+
+```sh
+python -m OpenModelicaFiles.modelica_workflow linearize \
+  --model path/to/MyPlant.mo \
+  --model-class MyPlant \
+  --output outputs/MyPlant_linearized.mo \
+  --start-time 0 --stop-time 1 --intervals 500
+```
+
+For a package model, pass the fully qualified class, such as
+`--model-class MyPackage.MyPlant`. Then use the output with `validate`,
+`simulate`, or `deploy`.
+
+OpenModelica must be installed with `omc` available on PATH. The command keeps
+compiler artifacts in a temporary directory, validates the extracted matrices
+before copying the `.mo` output, and fails with diagnostics if OpenModelica
+cannot linearize the class or if it emits a non-SISO result.
 
 The workflow does not translate arbitrary Modelica component diagrams, DAEs,
 events, or nonlinear equations into firmware. The supported export has 1–16
 states, exactly one input and one output, and numeric finite matrix values.
-The generated firmware initializes every state to zero; nonzero operating
-points/initial states are not yet imported.
+The generated firmware uses the linearizer's `x0` initial state if present;
+models without `x0` start at zero.
 The current [linearized_model.mo](linearized_model.mo) has zero inputs and
 outputs, so it remains an analysis example and is not deployable by this
 profile. [esp32_demo.mo](esp32_demo.mo) is a small valid state-space example.
@@ -43,7 +57,7 @@ profile. [esp32_demo.mo](esp32_demo.mo) is a small valid state-space example.
 ## 2. Install tools
 
 - Python 3.10+ and the PyCircuits dependencies (`python -m pip install -e .`)
-- OpenModelica if you want the optional `--omc-check` syntax/model check
+- OpenModelica (`omc`) for linearization and the optional `--omc-check`
 - PlatformIO Core (`pio`) for firmware build and upload
 - `pyserial` for host telemetry: `python -m pip install -e ".[hardware]"`
 
@@ -70,8 +84,9 @@ python -m OpenModelicaFiles.modelica_workflow deploy \
 ```
 
 `validate` checks the state-space dimensions and numeric values. `simulate`
-runs a zero-initialized host-side RK4 simulation with a constant input and
-writes time/input/output/state columns to CSV (maximum one million samples).
+runs a host-side RK4 simulation with a constant input, starting at `x0` when
+present (otherwise zero), and writes time/input/output/state columns to CSV
+(maximum one million samples).
 Add `--omc-check` to run OpenModelica `checkModel()` as well. `deploy` writes
 `plant_model.h` and `firmware_config.h` into
 `OpenModelicaFiles/PlantHILProject/src/`, then builds with PlatformIO. It does
@@ -105,7 +120,7 @@ The input range maps the ADC reading to the model input; the model output is
 clamped to the output range and mapped to an 8-bit PWM duty cycle:
 
 ```sh
-python OpenModelicaFiles/modelica_workflow.py deploy \
+python -m OpenModelicaFiles.modelica_workflow deploy \
   --model OpenModelicaFiles/esp32_demo.mo \
   --mode io \
   --adc-pin 34 \

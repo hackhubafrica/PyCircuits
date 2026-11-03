@@ -153,17 +153,22 @@ Use OMEdit for graphical Modelica diagrams, then run the repository's Python
 workflow from the project root:
 
 ```sh
+python -m OpenModelicaFiles.modelica_workflow linearize \
+  --model path/to/MyPlant.mo \
+  --model-class MyPlant \
+  --output outputs/MyPlant_linearized.mo
 python -m OpenModelicaFiles.modelica_workflow validate \
-  --model OpenModelicaFiles/esp32_demo.mo
+  --model outputs/MyPlant_linearized.mo
 python -m OpenModelicaFiles.modelica_workflow simulate \
-  --model OpenModelicaFiles/esp32_demo.mo --output outputs/plant.csv
+  --model outputs/MyPlant_linearized.mo --output outputs/plant.csv
 python -m OpenModelicaFiles.modelica_workflow deploy \
-  --model OpenModelicaFiles/esp32_demo.mo --mode virtual
+  --model outputs/MyPlant_linearized.mo --mode virtual
 ```
 
-The first command validates a numeric SISO state-space model. The second
-generates portable firmware headers and builds the PlatformIO project without
-uploading. Flashing requires an explicit `--upload --port PORT`; telemetry is
+The first command asks OpenModelica to linearize the saved OMEdit model and
+exports A/B/C/D and its initial state. The remaining commands validate,
+simulate, and build from that export. Flashing requires an explicit
+`--upload --port PORT`; telemetry is
 available with `python -m OpenModelicaFiles.modelica_workflow monitor
 --port PORT`. Real-I/O mode requires configured ADC/PWM pins and ranges; its
 outputs are disabled unless configuration validates. This first workflow

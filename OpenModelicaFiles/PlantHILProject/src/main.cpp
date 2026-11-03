@@ -161,6 +161,9 @@ static void readCommands() {
 
 void setup() {
   Serial.begin(115200);
+  for (uint8_t index = 0; index < MODEL_STATE_COUNT; ++index) {
+    state[index] = MODEL_X0[index];
+  }
 #if !MODEL_MODE_VIRTUAL
   if (!IO_CONFIG_VALID) {
     sendError("real-I/O configuration is invalid; PWM remains disabled");

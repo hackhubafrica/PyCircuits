@@ -160,7 +160,7 @@ risk is in the optional toolchain, not the core.
 | **E2 – Extension payloads** | optional compiler/runtime integrations, beginning with Modelica | Rumoca remains future; OpenModelica checks use external CLI | remaining |
 | **E3 – Jupyter/binder** | publish L1 results as a Jupyter kernel / interactive binder; expose `pycircuits_sim.*` across notebooks | `pycircuits_jupyter/` wrapper; example notebooks | low-moderate |
 | **E4 – Rust runtime** | port hot-path simulation to Rust (simulation kernels) with a C ABI; optional `[rust]` extra | `rust_runtime/` crate; `pycircuits_sim/rust/` module | high |
-| **E5 – Modelica front-end** | expand OMEdit and linearized SISO workflow toward general `.mo` import via Rumoca and a graphical block editor | current importer is limited; arbitrary DAE support remains | remaining |
+| **E5 – Modelica front-end** | expand the OMEdit/OpenModelica `linearize()` SISO workflow toward general `.mo` import via Rumoca and a graphical block editor | automatic matrix export is implemented for supported SISO models; arbitrary DAE support remains | in progress |
 | **E6 – Deployment** | general CasADi/JAX -> C -> PlatformIO wiring and automated HIL validation | current firmware is SISO state-space only; general codegen remains | remaining |
 
 ---

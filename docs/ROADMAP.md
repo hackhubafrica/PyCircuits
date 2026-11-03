@@ -83,10 +83,19 @@ adopt any subset.
 | **1. IR & serialization** | done | `pycircuits_sim/ir.py` derived JSON Schema and typed round trips | implemented |
 | **2. Block-diagram frontend** | remaining | general graph interconnect and plant/controller diagram editor; current MNA schematic editor is separate | not implemented |
 | **3. Hardware bridge** | partial | state-space ESP32 workflow, serial telemetry, explicit PlatformIO upload; automated HIL comparison remains | in progress |
-| **4. Modelica front end** | partial | OMEdit authoring and SISO linearized `.mo` import/deploy; general Rumoca/DAE front end remains | in progress |
+| **4. Modelica front end** | partial | OMEdit authoring, OpenModelica linearize/export, and SISO state-space deployment; general Rumoca/DAE front end remains | in progress |
 | **5. Execution backends** | future | Rust simulation kernels + CasADi/JAX code generation | remaining |
 | **6. Julia integration** | future | ModelingToolkit.jl and DifferentialEquations.jl integration | remaining |
 | **7. Signal processing/system ID** | partial | frequency response and control analysis exist; dedicated system identification remains optional | remaining |
+
+## Known architecture gaps and planned stages
+
+| Known gap | Stage that addresses it | Current/next work |
+|---|---|---|
+| Real-time determinism and OS scheduling jitter | **Stage 3: hardware bridge hardening** | Current ESP32 firmware uses a cooperative Arduino loop and is not a hard-real-time guarantee. Keep fast control/PWM on-device; move ticks to an ESP32 hardware timer or pinned high-priority task, remove serial I/O from the control deadline, and measure worst-case execution time and jitter before documenting supported frequencies. |
+| Steady-state initialization and homotopy for stiff DAEs/algebraic loops | **Stage 4: general Modelica frontend/runtime** | Current linearization delegates operating-point solving to OpenModelica and now carries `x0`. Next, expose initialization failures and test nontrivial initial conditions; homotopy/DAE solving and Jacobian generation require a general solver backend and remain future work. |
+| Unified event/root-finding across language runtimes | **Stages 4–5: shared solver/event runtime** | Define event surfaces, root tolerances, event priority, reinitialization, and communication-step semantics in the shared IR; add cross-backend switching-system conformance traces before enabling multi-runtime HIL. |
+| Unified interactive workbench | **Stages 2 and 7: diagram editor + IDE** | Stage 2 adds general plant/controller diagrams; Stage 7 connects OMEdit/LSP authoring, simulation, telemetry, and notebooks into one workspace. |
 ## 5. Milestones
 
 > **Scope note.** "MATLAB/Simulink replacement" is the long-term ceiling, not

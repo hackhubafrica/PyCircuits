@@ -17,7 +17,10 @@ from pathlib import Path
 
 import numpy as np
 
-from .modelica_parser import parse_linearized_model
+from .modelica_parser import (
+    parse_linearized_initial_state,
+    parse_linearized_model,
+)
 
 DEFAULT_PROJECT_DIR = Path(__file__).resolve().parent / "PlantHILProject"
 MAX_STATES = 16
@@ -36,6 +39,7 @@ class StateSpacePlant:
     B: np.ndarray
     C: np.ndarray
     D: np.ndarray
+    initial_state: np.ndarray
 
     @property
     def state_count(self) -> int:
@@ -64,6 +68,12 @@ def load_deployable_plant(model_path: Path) -> StateSpacePlant:
     if A.ndim != 2 or A.shape[0] != A.shape[1]:
         raise WorkflowError(f"A must be square; got shape {A.shape}.")
     state_count = A.shape[0]
+    if B.ndim == 1 and B.size == state_count:
+        B = B.reshape((state_count, 1))
+    if C.ndim == 1 and C.size == state_count:
+        C = C.reshape((1, state_count))
+    if D.size == 1:
+        D = D.reshape((1, 1))
     if not 1 <= state_count <= MAX_STATES:
         raise WorkflowError(
             f"The ESP32 profile supports 1 to {MAX_STATES} states; "
@@ -82,7 +92,9 @@ def load_deployable_plant(model_path: Path) -> StateSpacePlant:
         if matrix.shape != expected:
             raise WorkflowError(
                 f"{name} must have shape {expected} for the supported "
-                f"single-input/single-output profile; got {matrix.shape}."
+                f"single-input/single-output profile; got {matrix.shape}. "
+                "Declare exactly one scalar Modelica input and one scalar "
+                "output, then linearize again."
             )
     for name, matrix in (("A", A), ("B", B), ("C", C), ("D", D)):
         if not np.all(np.isfinite(matrix)):
@@ -91,7 +103,15 @@ def load_deployable_plant(model_path: Path) -> StateSpacePlant:
             raise WorkflowError(
                 f"{name} contains values outside the ESP32 float32 range."
             )
-    return StateSpacePlant(A=A, B=B, C=C, D=D)
+    try:
+        initial_state = parse_linearized_initial_state(model_path, state_count)
+    except (OSError, ValueError) as error:
+        raise WorkflowError(
+            f"Could not parse initial state from {model_path}: {error}"
+        ) from error
+    if np.any(np.abs(initial_state) > MAX_MCU_FLOAT):
+        raise WorkflowError("x0 contains values outside the ESP32 float32 range.")
+    return StateSpacePlant(A=A, B=B, C=C, D=D, initial_state=initial_state)
 
 
 def _cpp_float(value: float) -> str:
@@ -117,6 +137,9 @@ def render_model_header(plant: StateSpacePlant) -> str:
         "static constexpr float MODEL_A[MODEL_STATE_COUNT][MODEL_STATE_COUNT] = {\n"
         f"{a_rows}\n"
         "};\n"
+        "static constexpr float MODEL_X0[MODEL_STATE_COUNT] = {"
+        f"{', '.join(_cpp_float(value) for value in plant.initial_state)}"
+        "};\n"
         "static constexpr float MODEL_B[MODEL_STATE_COUNT] = {"
         f"{b_values}"
         "};\n"
@@ -134,7 +157,7 @@ def simulate_plant(
     sample_period: float,
     input_value: float,
 ) -> tuple[list[float], list[float], list[float], list[np.ndarray]]:
-    """Run a zero-initialized fixed-step RK4 SISO simulation."""
+    """Run a fixed-step RK4 SISO simulation, starting from the model's x0."""
     if not math.isfinite(duration) or duration <= 0:
         raise WorkflowError("Simulation duration must be finite and positive.")
     if not math.isfinite(input_value):
@@ -147,7 +170,7 @@ def simulate_plant(
         )
     times = [0.0]
     inputs = [input_value]
-    initial_state = np.zeros(plant.state_count, dtype=float)
+    initial_state = plant.initial_state.copy()
     states = [initial_state]
     outputs = [
         float(plant.C[0, :] @ initial_state + plant.D[0, 0] * input_value)
@@ -198,9 +221,13 @@ def _write_simulation_csv(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="", encoding="utf-8") as output_file:
         writer = csv.writer(output_file)
-        writer.writerow(["time_s", "input", "output", *[
-            f"x{index + 1}" for index in range(plant.state_count)
-        ]])
+        header = [
+            "time_s",
+            "input",
+            "output",
+            *(f"x{index + 1}" for index in range(plant.state_count)),
+        ]
+        writer.writerow(header)
         for time_s, input_value, output, state in zip(times, inputs, outputs, states):
             writer.writerow([time_s, input_value, output, *state.tolist()])
 
@@ -313,8 +340,8 @@ def _run_openmodelica_check(model_path: Path, model_class: str | None) -> None:
                 "Could not infer a Modelica class name; pass --model-class."
             )
         model_class = match.group(1)
-    if not re.fullmatch(r"[A-Za-z_]\w*", model_class):
-        raise WorkflowError("Model class must be a simple Modelica identifier.")
+    if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", model_class):
+        raise WorkflowError("Model class must be a qualified Modelica identifier.")
 
     model_string = str(model_path.resolve()).replace("\\", "\\\\").replace('"', '\\"')
     with tempfile.TemporaryDirectory(prefix="pycircuits-omc-") as temp_dir:
@@ -342,6 +369,108 @@ def _run_openmodelica_check(model_path: Path, model_class: str | None) -> None:
             "OpenModelica checkModel failed:\n" + (output.strip() or "No output")
         )
     print(output.strip() or f"OpenModelica checkModel passed for {model_class}.")
+
+
+def linearize_model(
+    model_path: Path,
+    *,
+    model_class: str,
+    output_path: Path,
+    start_time: float = 0.0,
+    stop_time: float = 1.0,
+    intervals: int = 500,
+) -> Path:
+    """Run OpenModelica linearize() and export its supported state-space model."""
+    omc = shutil.which("omc")
+    if omc is None:
+        raise WorkflowError(
+            "OpenModelica's 'omc' executable was not found on PATH. "
+            "Install OpenModelica before running the linearize command."
+        )
+    if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", model_class):
+        raise WorkflowError("Model class must be a qualified Modelica identifier.")
+    if not math.isfinite(start_time) or not math.isfinite(stop_time):
+        raise WorkflowError("Linearization times must be finite.")
+    if start_time >= stop_time:
+        raise WorkflowError("Linearization stop time must be after start time.")
+    if intervals < 1:
+        raise WorkflowError("Linearization intervals must be a positive integer.")
+
+    model_path = model_path.expanduser().resolve()
+    output_path = output_path.expanduser().resolve()
+    if not model_path.is_file():
+        raise WorkflowError(f"Model file does not exist: {model_path}")
+    if output_path == model_path:
+        raise WorkflowError("Linearized output must not overwrite the source model.")
+    escaped_model = str(model_path).replace("\\", "\\\\").replace('"', '\\"')
+
+    with tempfile.TemporaryDirectory(prefix="pycircuits-linearize-") as temp_dir:
+        temp_path = Path(temp_dir)
+        script_path = temp_path / "linearize.mos"
+        script_path.write_text(
+            f'loadFile("{escaped_model}");\n'
+            f"linearize({model_class}, startTime={start_time:.17g}, "
+            f"stopTime={stop_time:.17g}, numberOfIntervals={intervals});\n"
+            "getErrorString();\n",
+            encoding="utf-8",
+        )
+        try:
+            result = subprocess.run(
+                [omc, str(script_path)],
+                cwd=temp_path,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise WorkflowError(
+                "OpenModelica linearization exceeded the 10-minute timeout."
+            ) from error
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        if (
+            result.returncode != 0
+            or re.search(r"\b[1-9]\d*\s+errors?\b", output)
+            or re.search(r"\bError:", output, re.IGNORECASE)
+        ):
+            raise WorkflowError(
+                "OpenModelica linearization failed:\n"
+                + (output.strip() or "No compiler output")
+            )
+
+        candidates: list[Path] = []
+        for candidate in temp_path.rglob("*.mo"):
+            if candidate == script_path:
+                continue
+            try:
+                matrices = parse_linearized_model(candidate)
+            except (OSError, ValueError):
+                continue
+            if matrices[0] is not None:
+                candidates.append(candidate)
+
+        if len(candidates) != 1:
+            found = ", ".join(candidate.name for candidate in candidates) or "none"
+            detail = output.strip()
+            raise WorkflowError(
+                "Could not identify one OpenModelica linearized .mo artifact "
+                f"(found: {found}). The model may not have linearizable states "
+                "or OpenModelica may have changed its output format."
+                + (f"\nOpenModelica output:\n{detail}" if detail else "")
+            )
+
+        artifact = candidates[0]
+        try:
+            load_deployable_plant(artifact)
+        except WorkflowError as error:
+            raise WorkflowError(
+                "OpenModelica produced a linearized model, but it does not fit "
+                f"the ESP32 SISO profile: {error}"
+            ) from error
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(artifact.read_text(encoding="utf-8"), encoding="utf-8")
+
+    return output_path
 
 
 def _run_platformio(project_dir: Path, *, upload_port: str | None = None) -> None:
@@ -385,7 +514,12 @@ def _telemetry_interval_us(interval: float, sample_period_us: int) -> int:
 
 
 def _add_model_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", type=Path, required=True, help="Linearized Modelica .mo file")
+    parser.add_argument(
+        "--model",
+        type=Path,
+        required=True,
+        help="Linearized Modelica .mo file",
+    )
     parser.add_argument(
         "--project-dir",
         type=Path,
@@ -427,6 +561,31 @@ def _build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--model", type=Path, required=True)
     validate.add_argument("--omc-check", action="store_true")
     validate.add_argument("--model-class")
+
+    linearize = commands.add_parser(
+        "linearize",
+        help="Linearize a graphical Modelica model and export state-space .mo",
+    )
+    linearize.add_argument(
+        "--model",
+        type=Path,
+        required=True,
+        help="Source Modelica .mo",
+    )
+    linearize.add_argument(
+        "--model-class",
+        required=True,
+        help="Modelica class to linearize",
+    )
+    linearize.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output linearized .mo",
+    )
+    linearize.add_argument("--start-time", type=float, default=0.0, help="Seconds")
+    linearize.add_argument("--stop-time", type=float, default=1.0, help="Seconds")
+    linearize.add_argument("--intervals", type=int, default=500)
 
     simulate = commands.add_parser(
         "simulate",
@@ -496,7 +655,18 @@ def main(argv: list[str] | None = None) -> int:
         model_path = args.model.expanduser().resolve()
         if not model_path.is_file():
             raise WorkflowError(f"Model file does not exist: {model_path}")
-        if args.omc_check:
+        if args.command == "linearize":
+            output_path = linearize_model(
+                model_path,
+                model_class=args.model_class,
+                output_path=args.output,
+                start_time=args.start_time,
+                stop_time=args.stop_time,
+                intervals=args.intervals,
+            )
+            print(f"Exported linearized model to {output_path}.")
+            return 0
+        if getattr(args, "omc_check", False):
             _run_openmodelica_check(model_path, args.model_class)
         plant = load_deployable_plant(model_path)
 

@@ -1,4 +1,4 @@
-"""Parse linearized state-space matrices from Modelica source files."""
+"""Parse state-space matrices and the initial state from Modelica source files."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Optional
 
 import numpy as np
 
-__all__ = ["parse_linearized_model"]
+__all__ = ["parse_linearized_initial_state", "parse_linearized_model"]
 
 _MATRIX_NAMES = ("A", "B", "C", "D")
 _NUMBER = re.compile(
@@ -49,17 +49,44 @@ def _read_assignments(content: str) -> dict[str, str]:
     return assignments
 
 
+def _read_assignment(content: str, name: str) -> str | None:
+    declaration = re.search(
+        rf"^\s*(?:(?:parameter|constant)\s+)?Real\s+{re.escape(name)}"
+        rf"\s*(?:\[[^\]]*\])?\s*=\s*",
+        content,
+        re.MULTILINE,
+    )
+    if declaration is None:
+        return None
+
+    start = declaration.end()
+    depth = 0
+    for index in range(start, len(content)):
+        char = content[index]
+        if char in "[({":
+            depth += 1
+        elif char in "])}":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            return content[start:index].strip()
+    return None
+
+
 def _integer_parameters(content: str) -> dict[str, int]:
     return {
         name: int(value)
         for name, value in re.findall(
-            r"\bparameter\s+Integer\s+(\w+)\s*=\s*(\d+)\s*;",
+            r'\bparameter\s+Integer\s+(\w+)\s*=\s*(\d+)'
+            r'(?:\s+"(?:[^"]|"")*")?\s*;',
             content,
         )
     }
 
 
-def _declared_shapes(content: str, dimensions: dict[str, int]) -> dict[str, tuple[int, int]]:
+def _declared_shapes(
+    content: str,
+    dimensions: dict[str, int],
+) -> dict[str, tuple[int, int]]:
     shapes: dict[str, tuple[int, int]] = {}
     for name in _MATRIX_NAMES:
         match = re.search(
@@ -103,6 +130,34 @@ def _parse_zeros(expression: str, dimensions: dict[str, int]) -> np.ndarray:
     return np.zeros(tuple(shape), dtype=float)
 
 
+def parse_linearized_initial_state(
+    file_path: str | Path,
+    state_count: int,
+) -> np.ndarray:
+    """Read the linearizer's ``x0`` vector, defaulting to zero when absent."""
+    content = Path(file_path).read_text(encoding="utf-8")
+    expression = _read_assignment(content, "x0")
+    if expression is None:
+        return np.zeros(state_count, dtype=float)
+    if expression.startswith("zeros"):
+        vector = _parse_zeros(expression, _integer_parameters(content)).reshape(-1)
+    else:
+        normalized = expression.replace("{", "[").replace("}", "]")
+        try:
+            vector = np.asarray(ast.literal_eval(normalized), dtype=float).reshape(-1)
+        except (OverflowError, SyntaxError, ValueError) as error:
+            raise ValueError(
+                f"Unsupported initial state vector: {expression!r}"
+            ) from error
+    if vector.shape != (state_count,):
+        raise ValueError(
+            f"x0 must contain {state_count} values; got {vector.size}."
+        )
+    if not np.all(np.isfinite(vector)):
+        raise ValueError("x0 contains a non-finite value.")
+    return vector
+
+
 def _parse_literal(expression: str) -> np.ndarray:
     raw = expression.strip()
     if ";" in raw:
@@ -124,7 +179,7 @@ def _parse_literal(expression: str) -> np.ndarray:
     normalized = raw.replace("{", "[").replace("}", "]")
     try:
         literal = ast.literal_eval(normalized)
-    except (SyntaxError, ValueError) as error:
+    except (OverflowError, SyntaxError, ValueError) as error:
         raise ValueError(f"Unsupported matrix literal: {expression!r}") from error
     return np.asarray(literal, dtype=float)
 
@@ -154,7 +209,12 @@ def _extract_matrix(
 
 def parse_linearized_model(
     file_path: str | Path,
-) -> tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+) -> tuple[
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+]:
     """Extract state-space matrices ``(A, B, C, D)`` from a Modelica file.
 
     Supports numeric matrix literals written with Modelica ``[]`` or ``{}``
