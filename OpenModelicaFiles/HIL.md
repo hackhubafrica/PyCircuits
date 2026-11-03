@@ -1,50 +1,74 @@
-# Hardware-in-the-Loop (HIL) Deployment
+# Hardware-in-the-Loop and ESP32 deployment
 
-ESP32 firmware deployment via PlatformIO for running compiled Modelica plants on hardware.
+The supported first deployment profile is a linearized continuous-time SISO
+state-space plant (`der(x)=A*x+B*u`, `y=C*x+D*u`) with 1–16 states. The
+ESP32 evaluates this plant using fixed-step RK4. Python generates the
+standalone matrix header and configuration; PlatformIO builds and, only on
+explicit request, uploads it. OpenModelica-generated simulation C is not
+copied into the firmware because it can depend on the OpenModelica runtime.
 
-## PlatformIO project
+## Modes
 
-Located at `PlantHILProject/`. Contains:
+- **Virtual plant (default):** ESP32 evolves the model using a serial-settable
+  constant input. No GPIO is driven. Set the input with a JSON-line command:
+  `{"type":"set_input","value":1.25}`.
+- **Real I/O:** an ADC1 pin is mapped to the model input range and a PWM output
+  pin is driven from the clamped model output range. Configuration requires
+  an ADC1 pin (GPIO 32–39), a usable PWM pin, and numeric ranges;
+  flash/UART/boot-strapping pins are rejected. Unconfigured firmware keeps the
+  PWM output disabled. PWM output is generic and is not an actuator safety
+  system.
 
-| Path | Purpose |
-|------|---------|
-| `platformio.ini` | PlatformIO project configuration |
-| `src/` | Firmware source (compiled Modelica `Plant.h`/`Plant.c` synced here) |
-| `include/` | Header files |
-| `lib/` | Libraries |
-| `test/` | Test files |
+Do not connect an ESP32 pin directly to voltage/current levels beyond its
+board's specifications. Select a board-appropriate ADC interface and
+conditioning, external protection, a current-limited test circuit, and a
+hardware-safe output stage. Confirm all pin assignments against the exact
+board. No particular sensor, driver, or power stage is assumed.
 
-## Build and flash
+## Build, flash, monitor
+
+Follow [BUILD.md](BUILD.md) from the repository root. In short:
 
 ```sh
-cd OpenModelicaFiles/PlantHILProject
-pio run              # Compile firmware
-pio run -t upload    # Flash to ESP32
+python -m OpenModelicaFiles.modelica_workflow validate \
+  --model OpenModelicaFiles/esp32_demo.mo
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo --mode virtual
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo --mode virtual \
+  --upload --port /dev/ttyUSB0
+python -m OpenModelicaFiles.modelica_workflow monitor --port /dev/ttyUSB0
 ```
 
-## ESP32 hardware limits for HIL simulation
+The default update interval is 1 ms; telemetry is sent every 100 ms so serial
+printing does not run on every integration step. Configure the serial monitor
+to 115200 baud. Close any other program using the device's serial port.
 
-| Resource | ESP32 Limit | Impact on Modelica plant models |
-|----------|-------------|---------------------------------|
-| Floating-Point Unit | Native 32-bit float; 64-bit double emulated in software | Compile OpenModelica targeting `float` to avoid severe CPU slowdowns |
-| State dimension | 1–20 states at ≥1 kHz; >50 states taxes single core | Fine for DC-DC converters, motors, mechanical linkages; heavy power grids need faster MCU or FPGA |
-| Nonlinear solvers / DAEs | Explicit ODEs run instantly; implicit DAEs with Newton-Raphson bottleneck real-time | Keep plant models in explicit state-space form; pre-solve algebraic loops during compilation |
-| RAM & Flash | ~520 KB SRAM, 4–8 MB Flash | Generated C code ≈10–50 KB, leaving room for buffers |
+## Timing and model limits
 
-## Mass-spring-damper on ESP32
+- The ESP32 firmware is not a hard-real-time safety controller. Loop timing
+  includes Arduino/FreeRTOS scheduling, ADC/PWM calls, and serial activity.
+- Choose a sample interval appropriate for model stiffness and the expected
+  real-time rate. RK4 can become numerically unstable when the step is too
+  large; the current utility checks the specified interval but does not
+  calculate an automatic stable step.
+- ESP32 floating-point arithmetic uses `float`; very large or poorly scaled
+  state-space coefficients may be inaccurate or exceed MCU range.
+- Firmware starts every state at zero; a nonzero Modelica operating point is
+  not currently carried into the generated model header.
+- Nonlinear equations, implicit DAEs, discrete events, arbitrary Modelica
+  components, and models with multiple inputs/outputs are not currently
+  deployable through this workflow.
 
-A 2nd-order mass-spring-damper = 2 coupled first-order ODEs:
+## Hardware smoke test
 
-$$\dot{x}_1 = x_2$$
-$$\dot{x}_2 = \frac{1}{m}(u - b x_2 - k x_1)$$
-
-On an ESP32 at 240 MHz, updating these equations with Euler or RK4 takes <1 µs. Can clock at 10–50 kHz in a FreeRTOS hardware timer task, leaving >95% CPU free for telemetry streaming, PID, and communication.
-
-## Real-time determinism
-
-Standard OS (even Arch Linux with PREEMPT_RT) is non-deterministic. For HIL:
-
-- **Microcontroller (FreeRTOS/bare-metal)**: hard real-time loops — PWM generation, fast PID, ADC reads
-- **Host (Python/Julia/Rust)**: soft real-time — parameter tuning, logging, offline optimization, telemetry visualization
-
-This boundary prevents OS context switches and scheduling jitter from destabilizing the control loop.
+1. Build without upload first; inspect the generated headers and confirm the
+   selected model/mode/pin map.
+2. Flash only the intended ESP32 and open the telemetry monitor.
+3. In virtual mode, check that the state converges as expected, then send a
+   small input command from a serial terminal.
+4. In real-I/O mode, first test with a safe low-voltage signal and a
+   disconnected/current-limited load. Confirm ADC scaling and verify PWM
+   clamping before connecting an actuator.
+5. Record the board, pin map, ranges, sample period, and test result with the
+   experiment.

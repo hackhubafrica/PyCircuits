@@ -1,122 +1,142 @@
-# Build Guide
+# Graphical Modelica to ESP32 workflow
 
-Compile and linearize Modelica models, organize build artifacts, and deploy to PlatformIO.
+Use OMEdit for graphical Modelica authoring. The Python workflow accepts a
+linearized, continuous-time SISO state-space `.mo` model, generates a small
+portable C++ model header, builds the PlatformIO firmware, and uploads only
+when explicitly requested.
 
-## Compile a Modelica plant (`compile-plant.py`)
+## 1. Create and check a plant in OMEdit
 
-`compile-plant.py` loads a `.mo` file via OpenModelica, builds the model, moves generated C/headers into `plant_build/`, and syncs core files to the PlatformIO `src/` directory.
+1. Open OMEdit and create or open a Modelica model. Use Diagram View to place
+   and connect components from the Modelica Standard Library.
+2. Expose one scalar continuous input `u` and one scalar output `y`. Add a
+   reference/ground and complete all physical connections required by the
+   component libraries.
+3. Check the model, set its parameters, run a transient simulation, and save
+   the `.mo` source.
+4. For example, a mechanical plant can use Modelica > Mechanics >
+   Translational components such as Mass, Spring, Damper, Force, and Fixed.
+   Connect the flanges and a reference; use a signal source for excitation.
+   An electrical plant needs its electrical Ground and appropriate sources
+   and components. OMEdit shows the diagram and generated Modelica source for
+   the same model.
+5. For MCU deployment, linearize the model around its operating point and
+   obtain numeric `A`, `B`, `C`, and `D` matrices. Put those values into a
+   state-space `.mo` file with equations of the form `der(x)=A*x+B*u` and
+   `y=C*x+D*u`. The required source format is demonstrated in
+   [esp32_demo.mo](esp32_demo.mo).
 
-```python
-from compile_plant import compile_and_organize
+**Current boundary:** the workflow validates the state-space `.mo` export; it
+does not yet call OMEdit/OpenModelica to extract linearization matrices from an
+arbitrary graphical component model automatically. That automated
+linearization/export handoff is a remaining stage.
 
-compile_and_organize(
-    mo_file="plant.mo",
-    model_name="Plant",
-    build_dir="plant_build",
-    pio_src_dir="PlantHILProject/src"
-)
-```
+The workflow does not translate arbitrary Modelica component diagrams, DAEs,
+events, or nonlinear equations into firmware. The supported export has 1–16
+states, exactly one input and one output, and numeric finite matrix values.
+The generated firmware initializes every state to zero; nonzero operating
+points/initial states are not yet imported.
+The current [linearized_model.mo](linearized_model.mo) has zero inputs and
+outputs, so it remains an analysis example and is not deployable by this
+profile. [esp32_demo.mo](esp32_demo.mo) is a small valid state-space example.
 
-Run from the `OpenModelicaFiles/` directory:
+## 2. Install tools
+
+- Python 3.10+ and the PyCircuits dependencies (`python -m pip install -e .`)
+- OpenModelica if you want the optional `--omc-check` syntax/model check
+- PlatformIO Core (`pio`) for firmware build and upload
+- `pyserial` for host telemetry: `python -m pip install -e ".[hardware]"`
+
+The workflow's model parser and header generation do not require OMPython.
+OpenModelica and PlatformIO are external tools and are checked when their
+actions are requested.
+
+## 3. Validate and build (no upload)
+
+Run from the repository root:
 
 ```sh
-python compile-plant.py
+python -m OpenModelicaFiles.modelica_workflow validate \
+  --model OpenModelicaFiles/esp32_demo.mo
+
+python -m OpenModelicaFiles.modelica_workflow simulate \
+  --model OpenModelicaFiles/esp32_demo.mo \
+  --duration 1 --sample-period 0.001 \
+  --output outputs/esp32_demo.csv
+
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo \
+  --mode virtual
 ```
 
-### What it does
+`validate` checks the state-space dimensions and numeric values. `simulate`
+runs a zero-initialized host-side RK4 simulation with a constant input and
+writes time/input/output/state columns to CSV (maximum one million samples).
+Add `--omc-check` to run OpenModelica `checkModel()` as well. `deploy` writes
+`plant_model.h` and `firmware_config.h` into
+`OpenModelicaFiles/PlantHILProject/src/`, then builds with PlatformIO. It does
+not flash the board unless `--upload` is present.
 
-1. Loads `plant.mo` via `OMCSessionLocal`
-2. Builds the `Plant` model with `buildModel(Plant)`
-3. Creates `plant_build/` if it doesn't exist
-4. Moves generated `Plant*.c`, `Plant*.h`, makefiles, and JSON records into `plant_build/`
-5. Copies `Plant.h` and `Plant.c` into `PlantHILProject/src/` for PlatformIO
-
-## Linearize a model (`define_plant_model.py`)
-
-`define_plant_model.py` linearizes a Modelica model and organizes artifacts into `lin_build/`.
+To generate headers without requiring PlatformIO:
 
 ```sh
-python define_plant_model.py
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo \
+  --mode virtual \
+  --prepare-only
 ```
 
-### What it does
+## 4. Explicitly upload to an ESP32
 
-1. Loads `MassSpringDamperPlant.mo` via `OMCSessionLocal`
-2. Runs `linearize(MassSpringDamperPlant)`
-3. Creates `lin_build/` if it doesn't exist
-4. Moves generated linearization artifacts (C files, headers, matrices, `.mat`, `.json`, `.log`, makefiles) into `lin_build/`
-5. Copies core linearization C/header files into `PlantHILProject/src/`
+Virtual-plant mode evolves the model on the ESP32 and streams telemetry. It
+does not touch GPIO outputs:
 
-## OMEdit GUI workflow
-
-To model the Mass-Spring-Damper system graphically in OMEdit:
-
-1. **Create a new model**: File > New > Model, name it `MassSpringDamperPlant`, Diagram View
-2. **Drag components** from the Modelica Standard Library:
-   - Force Input: `Modelica > Mechanics > Translational > Sources > Force`
-   - Mass: `Modelica > Mechanics > Translational > Components > Mass`
-   - Spring: `Modelica > Mechanics > Translational > Components > Spring`
-   - Damper: `Modelica > Mechanics > Translational > Components > Damper`
-   - Fixed Reference Ground: `Modelica > Mechanics > Translational > Components > Fixed`
-   - Real Input Signal: `Modelica > Blocks > Sources > Step`
-3. **Connect translational flanges**: forceSource → mass → spring/damper → fixed ground
-4. **Run transient simulation** in OMEdit to verify response
-5. **Re-run** `python compile-plant.py` and your Python analysis script to verify SciPy step response matches OMEdit
-
-## Modifying parameters
-
-### Method A: Via OMEdit GUI (recommended for visual verification)
-
-1. Double-click a component (e.g., step height or mass) in OMEdit and change the value
-2. Run a transient simulation to see the new response curve
-3. Re-run `python compile-plant.py` and your Python script
-4. Verify Matplotlib plot matches OMEdit simulation window
-
-### Method B: Programmatically in Python
-
-Override parameters directly in your NumPy script before running `signal.step()`:
-
-```python
-B_modified = B * 2.0  # Scale step input force magnitude
-system_custom = signal.StateSpace(A, B_modified, C, D)
-t, y = signal.step(system_custom)
+```sh
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo \
+  --mode virtual \
+  --upload \
+  --port /dev/ttyUSB0
 ```
 
-Customize simulation duration and time steps:
+For configurable real I/O, provide an ADC1 input pin (GPIO 32–39) and a usable
+PWM output pin (GPIO 0–33; flash, UART, and boot-strapping pins are rejected).
+The input range maps the ADC reading to the model input; the model output is
+clamped to the output range and mapped to an 8-bit PWM duty cycle:
 
-```python
-stop_time = 5.0
-num_points = 1000
-t_custom = np.linspace(0, stop_time, num_points)
-system = signal.StateSpace(A, B, C, D)
-t, y = signal.step(system, T=t_custom)
+```sh
+python OpenModelicaFiles/modelica_workflow.py deploy \
+  --model OpenModelicaFiles/esp32_demo.mo \
+  --mode io \
+  --adc-pin 34 \
+  --pwm-pin 25 \
+  --input-min 0 --input-max 3.3 \
+  --output-min 0 --output-max 3.3 \
+  --upload \
+  --port /dev/ttyUSB0
 ```
 
-## Build artifacts
+Use only a low-voltage, current-limited test setup appropriate for the selected
+board and external circuit. Pin numbers, ranges, and external interface
+protection must match the user's hardware. The generated default configuration
+is virtual mode with GPIO output disabled. The workflow never uploads unless
+`--upload` is supplied and a port is specified.
 
-| Directory | Contents |
-|-----------|----------|
-| `plant_build/` | Generated C/headers/objects from `buildModel(Plant)` |
-| `lin_build/` | Generated linearization artifacts (C, headers, matrices, `.mat`, `.json`, `.log`) |
-| `PlantHILProject/src/` | Synced `Plant.h` / `Plant.c` for ESP32 firmware |
+## 5. Read telemetry
 
-## Troubleshooting
+Close any serial monitor that has the port open, then run:
 
-**`TypeError: 'module' object is not callable`**
-
-`OMCSession` is a module/class inside `OMPython`, not a directly callable function. Use `OMCSessionLocal`:
-
-```python
-from OMPython import OMCSessionLocal
-omc = OMCSessionLocal()
-omc.sendExpression('loadFile("RCCircuit.mo")')
-result = omc.sendExpression("buildModel(RCCircuit)")
+```sh
+python -m OpenModelicaFiles.modelica_workflow monitor --port /dev/ttyUSB0
 ```
 
-**System is structurally singular**
+Press Ctrl+C to stop. The optional hardware extra supplies `pyserial`. The
+default model update period is 1 ms and telemetry is emitted every 100 ms;
+both can be changed with `--sample-period` and `--telemetry-period`.
 
-Mixing standard components from the Modelica Standard Library without a Ground component or proper connections causes this. Every electrical circuit needs a ground reference; every mechanical system needs a fixed reference.
+## Legacy OpenModelica scripts
 
-**LoadFile: file does not exist**
-
-Ensure the `.mo` file is in the working directory or provide an absolute path. OpenModelica resolves relative paths from the current working directory, not the script location.
+`compile-plant.py` and `define_plant_model.py` call OpenModelica to build or
+linearize desktop simulation artifacts. Those generated C files can depend on
+the OpenModelica runtime and are not the standalone ESP32 firmware. Use
+`modelica_workflow.py` for the supported ESP32 profile instead.

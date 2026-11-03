@@ -14,7 +14,7 @@ core; the ladder below describes how to bolt on the other three.
 | Layer | Responsibility | Open-source building blocks | PyCircuits role as bridge |
 |---|---|---|---|
 | **L1 – Data & analysis core** | Numerics, linear algebra, circuits simulation, control analysis | Python, numpy, scipy (optional) | `pycircuits_sim` is the always-available core; returns frozen dataclasses |
-| **L2 – Modeling & authoring** | Text-based modeling, block diagrams, IDE experience | Modelica (.mo), Rumoca (parser+IR), OpenModelica, Julia ModelingToolkit | Consumes L1 results; a *proposed* `[modelica]` extra would load Rumoca |
+| **L2 – Modeling & authoring** | Text-based modeling, block diagrams, IDE experience | Modelica (.mo), Rumoca (parser+IR), OpenModelica, Julia ModelingToolkit | OMEdit + bounded linearized SISO deployment exists; general Rumoca import remains |
 | **L3 – Compile & execution** | IR lowering, codegen, simulation kernels | CasADi, JAX, Rust (no_std), C/C++, CoreIR | Template engine emits to any target; Rust kernel for real-time |
 | **L4 – Hardware & deployment** | HIL, firmware, embedded deployment | PlatformIO, MicroPython, RTOS, MQTT, serial | Runs target code exported from L3; streams telemetry back to L1/L2 |
 
@@ -156,23 +156,23 @@ risk is in the optional toolchain, not the core.
 
 | Phase | Scope | Key deliverables | Estimated effort |
 |---|---|---|---|
-| **E1 – Hardware bridge** | add `hardware/` subpackage: `HILRunner`, serial CLI, PlatformIO/flashing automation | `tests/test_hardware.py`; `pycircuits-sim hardware flash`; `HILRunner` class | medium |
-| **E2 – Extension payloads** | add `[modelica]`, `[rust]`, `[jax]` extras (guarded imports + ValueError + install hint) | `optional_payloads.py`; docs/examples per extra | low-moderate |
+| **E1 – Hardware bridge** | `hardware/` subpackage, serial JSON-lines telemetry, PlatformIO build/upload, generic fail-safe IO config | `modelica_workflow.py`, firmware, tests; hardware timing/HIL comparisons remain | in progress |
+| **E2 – Extension payloads** | optional compiler/runtime integrations, beginning with Modelica | Rumoca remains future; OpenModelica checks use external CLI | remaining |
 | **E3 – Jupyter/binder** | publish L1 results as a Jupyter kernel / interactive binder; expose `pycircuits_sim.*` across notebooks | `pycircuits_jupyter/` wrapper; example notebooks | low-moderate |
 | **E4 – Rust runtime** | port hot-path simulation to Rust (simulation kernels) with a C ABI; optional `[rust]` extra | `rust_runtime/` crate; `pycircuits_sim/rust/` module | high |
-| **E5 – Modelica front-end** | add `.mo` import via Rumoca; block-diagram UI that emits `interconnect.py`-compatible JSON | `modelica/` package; template engine; VS Code/Neovim LSP extension | high |
-| **E6 – Deployment** | CasADi/JAX -> C -> PlatformIO wiring; example firmware + HIL test | `deploy/` cookbook; firmware examples; `HILRunner` end-to-end test | high |
+| **E5 – Modelica front-end** | expand OMEdit and linearized SISO workflow toward general `.mo` import via Rumoca and a graphical block editor | current importer is limited; arbitrary DAE support remains | remaining |
+| **E6 – Deployment** | general CasADi/JAX -> C -> PlatformIO wiring and automated HIL validation | current firmware is SISO state-space only; general codegen remains | remaining |
 
 ---
 
-Stage 0  hygiene + doc corrections          
-Stage 1  ir.py — shared interchange format  
-Stage 2  graph interconnect + block editor  
-Stage 4  pycircuits-hil hardware bridge     
-Stage 3  signal processing / system ID      
-Stage 5  Modelica frontend via Rumoca       
-Stage 6  JAX / CasADi / Rust backends       
-Stage 7  LSP + Jupyter kernels             
+Stage 0  Core, analysis, design, CLI/API — done
+Stage 1  Shared interchange IR — done
+Stage 2  General graph interconnect + plant/controller editor — remaining
+Stage 3  Hardware bridge — first workflow in progress; automated HIL remains
+Stage 4  Signal processing / system identification — partial/optional
+Stage 5  General Modelica frontend via Rumoca — remaining
+Stage 6  JAX / CasADi / Rust backends — remaining
+Stage 7  LSP + Jupyter kernels — remaining
 
 
 *See also: [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md),

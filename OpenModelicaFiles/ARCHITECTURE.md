@@ -2,6 +2,13 @@
 
 Multi-tier architecture for the OpenModelica physical modeling layer.
 
+> **Implementation status:** this diagram describes the long-term target.
+> Today, OMEdit is the graphical authoring tool and
+> `modelica_workflow.py` deploys numeric, linearized SISO state-space models
+> through PlatformIO. A Rumoca compiler, shared-memory/Arrow bridge,
+> cross-runtime event engine, and general Modelica-to-firmware compiler are
+> not implemented.
+
 ## Overview
 
 The suite replaces proprietary graphical block diagrams (Simulink) with Modelica's text-based `.mo` files as the foundational physical modeling and authoring frontend. Modelica defines physical systems, multi-domain components (electrical, mechanical, thermal), and governing differential-algebraic equations (DAEs).

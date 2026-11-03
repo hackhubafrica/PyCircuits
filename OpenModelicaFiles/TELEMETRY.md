@@ -1,164 +1,61 @@
-# Telemetry Protocol
+# ESP32 telemetry and command protocol
 
-Binary telemetry packet format for streaming plant state from ESP32 to host over serial/USB.
+The PlatformIO firmware and Python host use UTF-8 JSON Lines at 115200 baud.
+Each message is one JSON object followed by `\n`. This replaces the old
+unimplemented binary/Go examples so that the firmware and host have one
+consistent format.
 
-## Packet structure (C)
+## Device telemetry
 
-```c
-// telemetry.h
-#ifndef TELEMETRY_H
-#define TELEMETRY_H
-
-#include <stdint.h>
-#include <stddef.h>
-
-typedef struct __attribute__((packed)) {
-    uint8_t  sync1;     // Sync Byte 1: 0xAA
-    uint8_t  sync2;     // Sync Byte 2: 0xBB
-    uint32_t timestamp; // Time in microseconds (4 bytes)
-    float    state_x;   // Modelica State Variable (4 bytes)
-    float    input_u;   // Control Input Variable (4 bytes)
-    uint8_t  checksum;  // Simple XOR checksum (1 byte)
-} TelemetryPacket;
-
-inline uint8_t calc_checksum(const uint8_t *data, size_t len) {
-    uint8_t chk = 0;
-    for (size_t i = 0; i < len; ++i) {
-        chk ^= data[i];
-    }
-    return chk;
-}
-
-#endif
+```json
+{"type":"telemetry","timestamp_us":1234,"input":0.5,"output":0.25,"mode":"virtual","states":[0.25]}
 ```
 
-Packet size: **15 bytes** (2 sync + 4 timestamp + 4 state_x + 4 input_u + 1 checksum)
+Fields:
 
-## C++ sender (ESP32)
+| Field | Type | Meaning |
+|---|---|---|
+| `type` | string | `telemetry` |
+| `timestamp_us` | integer | ESP32 `micros()` timestamp (wraps approximately every 71 minutes) |
+| `input` | number | Model input used for this sample |
+| `output` | number | Model output |
+| `mode` | string | `virtual` or `io` |
+| `states` | array of numbers | Current state vector |
 
-```cpp
-// main.cpp
-#include <Arduino.h>
-#include "telemetry.h"
-#include "plant_model.h"
+Firmware errors use `{"type":"error","message":"..."}` and do not masquerade
+as telemetry.
 
-PlantState plant;
-TelemetryPacket packet;
+## Host command
 
-void send_telemetry() {
-    packet.sync1 = 0xAA;
-    packet.sync2 = 0xBB;
-    packet.timestamp = micros();
-    packet.state_x = plant.x;
-    packet.input_u = plant.u;
+Virtual mode accepts the following JSON-line command:
 
-    packet.checksum = calc_checksum(((uint8_t*)&packet) + 2, sizeof(TelemetryPacket) - 3);
-
-    Serial.write((uint8_t*)&packet, sizeof(TelemetryPacket));
-}
+```json
+{"type":"set_input","value":1.25}
 ```
 
-## Python receiver (pyserial + struct)
+The firmware ignores host input commands in real-I/O mode. The Python helper
+validates finite values and sends the newline-delimited message:
 
 ```python
-import serial
-import struct
+from pycircuits_sim.hardware import HILRunner
 
-PACKET_FORMAT = "<BBIffB"   # little-endian: 2B, I, 2f, B
-PACKET_SIZE = struct.calcsize(PACKET_FORMAT)  # 15 bytes
-
-def parse_stream(port="/dev/ttyUSB0", baudrate=115200):
-    ser = serial.Serial(port, baudrate, timeout=1)
-
-    while True:
-        # Search for sync marker (0xAA 0xBB)
-        if ser.read(1) == b'\xAA':
-            if ser.read(1) == b'\xBB':
-                payload = ser.read(PACKET_SIZE - 2)
-                if len(payload) < PACKET_SIZE - 2:
-                    continue
-
-                full_buf = b'\xAA\xBB' + payload
-                sync1, sync2, timestamp_us, state_x, input_u, checksum = \
-                    struct.unpack(PACKET_FORMAT, full_buf)
-
-                # Verify checksum
-                computed_chk = 0
-                for b in full_buf[2:-1]:
-                    computed_chk ^= b
-
-                if computed_chk == checksum:
-                    time_sec = timestamp_us / 1e6
-                    print(f"[{time_sec:.4f}s] State X: {state_x:.4f} | Input U: {input_u:.4f}")
-                else:
-                    print("Checksum error, frame dropped.")
+runner = HILRunner("/dev/ttyUSB0", on_message=print)
+runner.start()
+runner.send_input(1.25)  # virtual mode only
+runner.stop()
 ```
 
-## Go receiver (encoding/binary)
+Install the optional serial dependency with
+`python -m pip install -e ".[hardware]"`. Or monitor using
+`python -m OpenModelicaFiles.modelica_workflow monitor --port /dev/ttyUSB0`.
+The helper validates message types and finite numeric fields and reports
+malformed lines through `on_message` as an error object.
 
-```go
-package main
+## Timing and limitations
 
-import (
-    "bytes"
-    "encoding/binary"
-    "fmt"
-    "log"
-
-    "go.bug.st/serial"
-)
-
-type TelemetryPacket struct {
-    Timestamp uint32
-    StateX    float32
-    InputU    float32
-    Checksum  uint8
-}
-
-func main() {
-    mode := &serial.Mode{BaudRate: 115200}
-    port, err := serial.Open("/dev/ttyUSB0", mode)
-    if err != nil {
-        log.Fatalf("Failed to open serial port: %v", err)
-    }
-    defer port.Close()
-
-    buf := make([]byte, 1)
-    for {
-        _, err := port.Read(buf)
-        if err != nil || buf[0] != 0xAA {
-            continue
-        }
-        _, err = port.Read(buf)
-        if err != nil || buf[0] != 0xBB {
-            continue
-        }
-
-        payload := make([]byte, 13)
-        _, err = port.Read(payload)
-        if err != nil {
-            continue
-        }
-
-        var packet TelemetryPacket
-        reader := bytes.NewReader(payload)
-        err = binary.Read(reader, binary.LittleEndian, &packet)
-        if err != nil {
-            log.Println("Binary unpack error:", err)
-            continue
-        }
-
-        fmt.Printf("[%d us] State X: %.4f | Input U: %.4f\n",
-            packet.Timestamp, packet.StateX, packet.InputU)
-    }
-}
-```
-
-## Key benefits
-
-| Benefit | Explanation |
-|---------|-------------|
-| Bandwidth savings | 15-byte binary packet takes ~3× less UART time than equivalent ASCII CSV (~35 bytes) |
-| Zero MCU CPU overhead | Microcontroller writes directly from RAM to UART DMA registers; no `sprintf` or floating-point formatting |
-| Deterministic layout | `__attribute__((packed))` ensures byte layout is deterministic across platforms |
-| Checksum validation | XOR checksum catches corrupted frames |
+The model step defaults to 1 ms; telemetry defaults to 100 ms. JSON is easy to
+inspect but has more bandwidth and formatting cost than a packed binary
+protocol. It is intended for educational low-rate telemetry, not high-rate
+sampling guarantees or hard-real-time control. Firmware timing is subject to
+Arduino/FreeRTOS scheduling. See [HIL.md](HIL.md) before connecting external
+hardware.

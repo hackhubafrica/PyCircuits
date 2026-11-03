@@ -80,13 +80,13 @@ adopt any subset.
 | Step | Effort | What it adds | Status / target scope |
 |---|---|---|---|
 | **0. Core** | already done | numpy engine + optional `[control]`/`[api]` extras, CLI, Streamlit workbench, test suite | shipped |
-| **1. IR & serialization** | medium | `pycircuits_sim/ir.py` — JSON Schema for plants/blocks/interconnections + `to_ir()`/`from_ir()` on every result dataclass | **next milestone** |
-| **2. Block-diagram frontend** | medium | general graph interconnect (beyond ordered chains) + drag-and-drop editor emitting the same JSON | target extension |
-| **3. Hardware bridge** | medium | PlatformIO/MicroPython firmware + serial/MQTT telemetry + automated HIL test loops | target extension |
-| **4. Modelica front end** | high | Modelica `.mo` parsing via Rumoca, compiled back through the Stage 1 IR | target extension |
-| **5. Execution backends** | high | Rust simulation kernels + CasADi/JAX codegen export | target extension |
-| **6. Julia integration** | medium | ModelingToolkit.jl symbolic models + DifferentialEquations.jl solvers | target extension |
-| **7. Signal processing** | low-medium | scipy.signal wrap + oscilloscope-style plotters | optional supplement |
+| **1. IR & serialization** | done | `pycircuits_sim/ir.py` derived JSON Schema and typed round trips | implemented |
+| **2. Block-diagram frontend** | remaining | general graph interconnect and plant/controller diagram editor; current MNA schematic editor is separate | not implemented |
+| **3. Hardware bridge** | partial | state-space ESP32 workflow, serial telemetry, explicit PlatformIO upload; automated HIL comparison remains | in progress |
+| **4. Modelica front end** | partial | OMEdit authoring and SISO linearized `.mo` import/deploy; general Rumoca/DAE front end remains | in progress |
+| **5. Execution backends** | future | Rust simulation kernels + CasADi/JAX code generation | remaining |
+| **6. Julia integration** | future | ModelingToolkit.jl and DifferentialEquations.jl integration | remaining |
+| **7. Signal processing/system ID** | partial | frequency response and control analysis exist; dedicated system identification remains optional | remaining |
 ## 5. Milestones
 
 > **Scope note.** "MATLAB/Simulink replacement" is the long-term ceiling, not
@@ -121,27 +121,28 @@ The IR is the firewall that keeps later stages additive: a Modelica front
 end, a Julia bridge, or a hardware runner all consume the same wire format
 instead of each inventing bespoke glue.
 
-**Milestone B:** a general graph interconnect model. `interconnect.py`
+**Milestone B (remaining):** a general graph interconnect model. `interconnect.py`
 currently models ordered forward/parallel/feedback chains only; a Simulink-
 like canvas needs arbitrary topology. The existing chain spec must keep
 producing identical results.
 
-**Milestone C:** the hardware bridge. A serial command layer for
+**Milestone C (in progress):** the hardware bridge. A serial command layer for
 flashing/reading an Arduino or ESP32, a `HILClient` that streams telemetry,
 and a `HILRunner` that executes a closed-loop test sequence against a
 simulated plant — all using the same `PlantReport` conventions already in
 PyCircuits. This is the differentiator a generic MATLAB clone will not have.
 
-**Milestone D:** extension payload packaging — a `pycircuits-sim[modelica]`
+**Milestone D (partial):** extension payload packaging — a `pycircuits-sim[modelica]`
 extra that only loads Rumoca/OpenModelica when installed, with a clean
 `ValueError` + install hint when absent.
 
-**Milestone E:** the decoupled IDE — an LSP-backed `.mo` authoring
+**Milestone E (remaining):** the decoupled IDE — an LSP-backed `.mo` authoring
 experience in Neovim/VS Code, with a Jupyter kernel that exposes
 PyCircuits results and an optional Julia kernel binding the same objects.
 
-**Milestone F (far):** the deployment layer — CasADi/JAX -> C -> PlatformIO
-toolchain, driven by a template engine over the Stage 1 IR.
+**Milestone F (far; remaining):** general CasADi/JAX -> C -> PlatformIO
+deployment driven by a template engine over the Stage 1 IR. The first
+state-space ESP32 workflow is a narrower path, not this general backend.
 
 ## 6. Guiding principles
 

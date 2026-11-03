@@ -34,12 +34,12 @@ Read the full plan in `docs/`:
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — the current position and the staged plan toward a modular MATLAB/Simulink replacement
 - [`docs/EXTENSION_LADDER.md`](docs/EXTENSION_LADDER.md) — the four-layer extension architecture (core → modeling → compile/execute → hardware)
 
-**Next stage (Stage 1 of the extension plan):** the shared IR is now
-implemented in `pycircuits_sim/ir.py` — a self-describing JSON format with a
-derived JSON Schema that every result dataclass round-trips through. It is
-the firewall that lets later front ends (Modelica, Julia, a hardware bridge)
-and back ends (JAX, CasADi, Rust) plug in without forking the engine. See
-[The shared IR](#the-shared-ir-interchange-format).
+**Extension status:** the shared IR is implemented. The next active work is
+general graph-based plant diagrams, a robust hardware-in-the-loop test loop,
+and extending the first OMEdit-to-ESP32 workflow beyond linearized SISO
+state-space plants. General Rumoca/DAE execution, Julia/Rust/JAX/CasADi
+backends, and an integrated scientific IDE remain future stages. See the
+[extension roadmap](docs/ROADMAP.md).
 
 ## Quick start
 
@@ -146,6 +146,30 @@ stability verdicts, Bode margins, Nyquist plot, root locus, PID tuning
 interconnection demo. Results appear as metric cards and interactive Plotly
 charts after pressing **Run analysis**. These tools mirror the `analyze`,
 `tune`, `sf`, and `interconnect` CLI subcommands below.
+
+## OMEdit to ESP32 workflow
+
+Use OMEdit for graphical Modelica diagrams, then run the repository's Python
+workflow from the project root:
+
+```sh
+python -m OpenModelicaFiles.modelica_workflow validate \
+  --model OpenModelicaFiles/esp32_demo.mo
+python -m OpenModelicaFiles.modelica_workflow simulate \
+  --model OpenModelicaFiles/esp32_demo.mo --output outputs/plant.csv
+python -m OpenModelicaFiles.modelica_workflow deploy \
+  --model OpenModelicaFiles/esp32_demo.mo --mode virtual
+```
+
+The first command validates a numeric SISO state-space model. The second
+generates portable firmware headers and builds the PlatformIO project without
+uploading. Flashing requires an explicit `--upload --port PORT`; telemetry is
+available with `python -m OpenModelicaFiles.modelica_workflow monitor
+--port PORT`. Real-I/O mode requires configured ADC/PWM pins and ranges; its
+outputs are disabled unless configuration validates. This first workflow
+supports linearized explicit state-space models with 1–16 states, not
+arbitrary Modelica DAEs or generated OpenModelica runtime C. Follow
+[OpenModelicaFiles/HIL.md](OpenModelicaFiles/HIL.md) for hardware cautions.
 
 ## CLI reference
 

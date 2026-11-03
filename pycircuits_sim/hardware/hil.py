@@ -1,7 +1,131 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from ..ir import IrMixin
 
+import json
+import threading
+from dataclasses import dataclass
+from typing import Any, Optional, Callable
+
+from ..ir import IrMixin, to_ir, from_ir
+from .telemetry import encode_input_command, parse_telemetry_line
+
+__all__ = [
+    "HILRunner",
+    "HILReport",
+    "serialize_plant_report",
+    "deserialize_plant_report",
+]
+
+
+@dataclass(frozen=True)
+class HILReport(IrMixin):
+    """Telemetry report sent from hardware to the simulator."""
+
+    timestamp_s: float
+    values: tuple[float, ...]
+    node_names: tuple[str, ...]
+
+
+def serialize_plant_report(report) -> bytes:
+    """Serialize a plant report (StateSpaceModel or PlantReport) to bytes."""
+    return json.dumps(to_ir(report)).encode("utf-8")
+
+
+def deserialize_plant_report(data: bytes):
+    """Deserialize a plant report from bytes received from hardware."""
+    return from_ir(json.loads(data.decode("utf-8")))
+
+
+class HILRunner:
+    """Receive ESP32 telemetry and send virtual-plant input commands."""
+
+    def __init__(
+        self,
+        port: str,
+        baudrate: int = 115200,
+        *,
+        on_message: Optional[Callable[[dict[str, Any]], None]] = None,
+    ) -> None:
+        self.port = port
+        self.baudrate = baudrate
+        self.on_message = on_message
+        self._serial: Optional[Any] = None
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+        self._serial_lib = self._try_import_serial()
+
+    @staticmethod
+    def _try_import_serial():
+        try:
+            import serial as pyserial
+            return pyserial
+        except ImportError:
+            return None
+
+    def _ensure_serial(self) -> None:
+        if self._serial_lib is None:
+            raise RuntimeError(
+                "Serial telemetry requires pyserial; install "
+                "'pycircuits-sim[hardware]'."
+            )
+        if self._serial is None:
+            self._serial = self._serial_lib.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                timeout=0.1,
+            )
+
+    def _close_serial(self) -> None:
+        if self._serial is not None:
+            self._serial.close()
+            self._serial = None
+
+    def _report_error(self, message: str) -> None:
+        if self.on_message is not None:
+            self.on_message({"type": "error", "message": message})
+
+    def start(self) -> None:
+        """Start the background serial reader, raising on port-open errors."""
+        if self._running:
+            return
+        self._ensure_serial()
+        self._running = True
+
+        def _reader() -> None:
+            try:
+                while self._running:
+                    raw = self._serial.readline() if self._serial is not None else b""
+                    if not raw:
+                        continue
+                    try:
+                        message = parse_telemetry_line(raw)
+                    except ValueError as error:
+                        self._report_error(str(error))
+                        continue
+                    if self.on_message is not None:
+                        self.on_message(message)
+            except OSError as error:
+                self._report_error(f"Serial telemetry failed: {error}")
+            finally:
+                self._running = False
+                self._close_serial()
+
+        self._thread = threading.Thread(target=_reader, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the serial reader and close the port."""
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        self._close_serial()
+
+    def send_input(self, value: float) -> int:
+        """Set the input of a device running in virtual-plant mode."""
+        self._ensure_serial()
+        if self._serial is None or not self._serial.is_open:
+            raise RuntimeError("Serial port is not open.")
+        return self._serial.write(encode_input_command(value))
 import json
 import time
 import threading
